@@ -13,7 +13,7 @@ export function AttachmentThumbs({
     return null;
   }
   return (
-    <div className="flex flex-wrap gap-2 px-3 pb-2">
+    <div className="flex flex-wrap gap-2 px-4 pb-2">
       {attachments.map((att, idx) => {
         const image = isImageAttachment(att);
         const preview = image ? attachmentPreviewUrl(att) : null;

@@ -108,7 +108,7 @@ src-tauri             Tauri v2 window, tray, Opt+Space, commands
 src                   React overlay: composer, markdown, attachments, settings
 ```
 
-Release CI (`.github/workflows/ci.yml`) runs Linux tests and, on `macos-latest`, `tauri build --target universal-apple-darwin`. Tag a version (for example `v0.1.1`) to attach the zip to a GitHub Release.
+Release CI (`.github/workflows/ci.yml`) runs Linux tests and, on `macos-latest`, `tauri build --target universal-apple-darwin`. Tag a version (for example `v0.1.2`) to attach the zip to a GitHub Release.
 
 ## License
 

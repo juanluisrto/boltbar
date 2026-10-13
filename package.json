@@ -1,7 +1,7 @@
 {
   "name": "boltbar",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Lightning-fast global chat bar for AI models on macOS",
   "license": "MIT",

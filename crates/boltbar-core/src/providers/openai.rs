@@ -59,16 +59,57 @@ pub fn chat_completions_body(req: &ChatRequest) -> serde_json::Value {
     })
 }
 
+/// Official `/v1/responses` and the ChatGPT Codex backend both require
+/// `input` as a list of message items — a concatenated string 400s with
+/// `{"detail":"Input must be a list"}`.
+pub fn responses_input_items(req: &ChatRequest) -> Vec<serde_json::Value> {
+    let suffix = prompt_suffix_for_text_files(&req.attachments);
+    let images: Vec<&crate::types::Attachment> = req
+        .attachments
+        .iter()
+        .filter(|a| is_image(&a.mime))
+        .collect();
+
+    req.messages
+        .iter()
+        .enumerate()
+        .map(|(idx, msg)| {
+            let is_last_user = idx + 1 == req.messages.len() && msg.role == Role::User;
+            let text = if is_last_user {
+                format!("{}{suffix}", msg.content)
+            } else {
+                msg.content.clone()
+            };
+            let text_type = match msg.role {
+                Role::Assistant => "output_text",
+                Role::System | Role::User => "input_text",
+            };
+            let mut content = vec![serde_json::json!({
+                "type": text_type,
+                "text": text
+            })];
+            if is_last_user {
+                for img in &images {
+                    content.push(serde_json::json!({
+                        "type": "input_image",
+                        "image_url": format!("data:{};base64,{}", img.mime, img.data_base64)
+                    }));
+                }
+            }
+            serde_json::json!({
+                "type": "message",
+                "role": role_name(msg.role),
+                "content": content
+            })
+        })
+        .collect()
+}
+
 pub fn responses_body(req: &ChatRequest) -> serde_json::Value {
-    let mut input = String::new();
-    for msg in &req.messages {
-        input.push_str(&format!("{}: {}\n", role_name(msg.role), msg.content));
-    }
-    input.push_str(&prompt_suffix_for_text_files(&req.attachments));
     serde_json::json!({
         "model": req.model,
         "stream": true,
-        "input": input,
+        "input": responses_input_items(req),
         "reasoning": { "effort": req.effort.as_str() }
     })
 }
@@ -90,7 +131,7 @@ pub fn last_user_text(messages: &[ChatMessage]) -> String {
         .unwrap_or_default()
 }
 
-pub async fn stream_chat_completions(
+pub async fn stream_openai_responses(
     http: &reqwest::Client,
     req: &ChatRequest,
     auth: &ResolvedAuth,
@@ -98,7 +139,7 @@ pub async fn stream_chat_completions(
     cancel: CancellationToken,
 ) -> Result<()> {
     let ResolvedAuth::ApiKey(key) = auth else {
-        return Err(BoltError::auth("OpenAI chat completions require an API key"));
+        return Err(BoltError::auth("OpenAI Responses API requires an API key"));
     };
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -108,12 +149,12 @@ pub async fn stream_chat_completions(
     );
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let resp = http
-        .post("https://api.openai.com/v1/chat/completions")
+        .post("https://api.openai.com/v1/responses")
         .headers(headers)
-        .json(&chat_completions_body(req))
+        .json(&responses_body(req))
         .send()
         .await?;
-    pump_openai_sse(resp, tx, cancel).await
+    pump_responses_sse(resp, tx, cancel).await
 }
 
 pub async fn stream_chatgpt_responses(
@@ -179,7 +220,7 @@ pub async fn pump_openai_sse(
     Ok(())
 }
 
-async fn pump_responses_sse(
+pub async fn pump_responses_sse(
     resp: reqwest::Response,
     tx: mpsc::Sender<StreamEvent>,
     cancel: CancellationToken,
@@ -263,5 +304,77 @@ mod tests {
         let text = body["messages"][0]["content"].as_str().unwrap();
         assert!(text.contains("secret notes"));
         assert_eq!(body["reasoning_effort"], "high");
+    }
+
+    fn sample(text: &str) -> ChatRequest {
+        ChatRequest {
+            provider: ProviderKind::Openai,
+            model: "gpt-6.1-sol".into(),
+            messages: vec![ChatMessage {
+                role: Role::User,
+                content: text.into(),
+            }],
+            attachments: vec![],
+            effort: crate::types::ThinkingEffort::Medium,
+        }
+    }
+
+    #[test]
+    fn official_and_chatgpt_responses_send_input_as_message_list() {
+        let req = sample("quien gobierna en ceuta");
+        let official = responses_body(&req);
+        let chatgpt = responses_body(&req);
+        assert_eq!(official, chatgpt);
+        assert!(
+            official["input"].is_array(),
+            "input must be a list, got {}",
+            official["input"]
+        );
+        assert_eq!(official["input"][0]["type"], "message");
+        assert_eq!(official["input"][0]["role"], "user");
+        assert_eq!(official["input"][0]["content"][0]["type"], "input_text");
+        assert_eq!(
+            official["input"][0]["content"][0]["text"],
+            "quien gobierna en ceuta"
+        );
+        assert_eq!(official["reasoning"]["effort"], "medium");
+        assert!(!official["input"].is_string());
+    }
+
+    #[test]
+    fn responses_input_keeps_history_as_list_items() {
+        let req = ChatRequest {
+            provider: ProviderKind::Openai,
+            model: "gpt-6.1-sol".into(),
+            messages: vec![
+                ChatMessage {
+                    role: Role::User,
+                    content: "hola".into(),
+                },
+                ChatMessage {
+                    role: Role::Assistant,
+                    content: "hola!".into(),
+                },
+                ChatMessage {
+                    role: Role::User,
+                    content: "quien gobierna en ceuta".into(),
+                },
+            ],
+            attachments: vec![],
+            effort: crate::types::ThinkingEffort::Low,
+        };
+        let input = responses_input_items(&req);
+        assert_eq!(input.len(), 3);
+        assert_eq!(input[1]["role"], "assistant");
+        assert_eq!(input[1]["content"][0]["type"], "output_text");
+        assert!(responses_body(&req)["input"].is_array());
+    }
+
+    #[test]
+    fn cursor_openai_compatible_path_still_uses_messages_array() {
+        let body = chat_completions_body(&sample("hi"));
+        assert!(body["messages"].is_array());
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(body["messages"][0]["content"], "hi");
     }
 }

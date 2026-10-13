@@ -396,7 +396,7 @@ export default function App() {
           onRemove={(idx) => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
         />
 
-        <div className="px-3">
+        <div className="px-4">
           <textarea
             ref={inputRef}
             value={draft}
@@ -421,7 +421,7 @@ export default function App() {
           />
         </div>
 
-        <footer className="flex items-center gap-2 px-3 pb-3 pt-1">
+        <footer className="flex items-center gap-2 px-5 pb-5 pt-1">
           <button
             type="button"
             aria-label="Attach files"
@@ -451,7 +451,7 @@ export default function App() {
             <button
               type="button"
               aria-label="Stop"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/8"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/8"
               onClick={() => void stopChat()}
             >
               <span className="block h-2.5 w-2.5 rounded-[2px] bg-[var(--text)]" />
@@ -460,7 +460,7 @@ export default function App() {
             <button
               type="button"
               aria-label="Send"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--gold)] text-black"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--gold)] text-black"
               onClick={() => void send()}
             >
               <SendIcon />

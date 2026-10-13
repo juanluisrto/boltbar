@@ -27,7 +27,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(secrets: Arc<dyn SecretStore>, paths: AuthPaths) -> Result<Self> {
         let http = reqwest::Client::builder()
-            .user_agent("boltbar/0.1")
+            .user_agent("boltbar/0.1.2")
             .build()?;
         Ok(Self {
             http,
@@ -170,7 +170,7 @@ impl Engine {
         match req.provider {
             ProviderKind::Openai => match &auth {
                 ResolvedAuth::ApiKey(_) => {
-                    openai::stream_chat_completions(&self.http, req, &auth, tx, cancel).await
+                    openai::stream_openai_responses(&self.http, req, &auth, tx, cancel).await
                 }
                 ResolvedAuth::Bearer { token, account_id } => {
                     openai::stream_chatgpt_responses(

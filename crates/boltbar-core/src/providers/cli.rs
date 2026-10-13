@@ -266,4 +266,20 @@ mod tests {
         assert!(prompt.contains("System: short"));
         assert!(prompt.contains("hi"));
     }
+
+    #[test]
+    fn cli_prompt_is_plain_text_not_a_responses_input_string() {
+        let req = ChatRequest {
+            provider: ProviderKind::Openai,
+            model: "gpt-6.1-sol".into(),
+            messages: vec![crate::types::ChatMessage {
+                role: Role::User,
+                content: "quien gobierna en ceuta".into(),
+            }],
+            attachments: vec![],
+            effort: crate::types::ThinkingEffort::Medium,
+        };
+        let prompt = build_prompt(&req);
+        assert_eq!(prompt, "quien gobierna en ceuta");
+    }
 }

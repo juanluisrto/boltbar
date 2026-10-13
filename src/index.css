@@ -2,9 +2,9 @@
 @import "highlight.js/styles/github-dark.min.css";
 
 :root {
-  --bg: rgba(16, 16, 18, 0.86);
-  --bg-solid: #141416;
-  --line: rgba(255, 255, 255, 0.08);
+  --bg: #1c1c1f;
+  --bg-solid: #1c1c1f;
+  --line: rgba(255, 255, 255, 0.1);
   --gold: #f5b942;
   --gold-dim: rgba(245, 185, 66, 0.16);
   --text: #f4f1ea;
@@ -45,10 +45,12 @@ textarea {
 .glass {
   color-scheme: dark;
   background: var(--bg);
-  backdrop-filter: blur(28px) saturate(1.4);
-  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  backdrop-filter: blur(40px) saturate(1.6);
+  -webkit-backdrop-filter: blur(40px) saturate(1.6);
   border: 1px solid var(--line);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
 }
 
 .web-preview {

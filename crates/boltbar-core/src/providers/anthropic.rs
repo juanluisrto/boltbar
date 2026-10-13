@@ -184,4 +184,23 @@ mod tests {
         assert_eq!(body["output_config"]["effort"], "low");
         assert_eq!(body["thinking"]["type"], "adaptive");
     }
+
+    #[test]
+    fn anthropic_messages_body_is_a_list() {
+        let req = ChatRequest {
+            provider: ProviderKind::Anthropic,
+            model: "claude-sonnet-5-5".into(),
+            messages: vec![ChatMessage {
+                role: Role::User,
+                content: "quien gobierna en ceuta".into(),
+            }],
+            attachments: vec![],
+            effort: crate::types::ThinkingEffort::Medium,
+        };
+        let body = messages_body(&req);
+        assert!(body["messages"].is_array());
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(body["messages"][0]["content"], "quien gobierna en ceuta");
+        assert_eq!(body["output_config"]["effort"], "medium");
+    }
 }
