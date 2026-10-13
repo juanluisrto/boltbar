@@ -46,9 +46,13 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
-          APP="$(find src-tauri/target -name 'Boltbar.app' -type d | head -n 1)"
-          test -n "$APP"
-          VERSION="$(sed -n 's/.*"version": "\(.*\)".*/\1/p' src-tauri/tauri.conf.json | head -n 1)"
+          APP="$(find target src-tauri/target -path '*/bundle/macos/Boltbar.app' -type d 2>/dev/null | head -n 1)"
+          if [ -z "$APP" ]; then
+            echo "Boltbar.app not found. Bundle tree:"
+            find target src-tauri/target -iname '*.app' -o -iname '*.dmg' 2>/dev/null | head -n 50
+            exit 1
+          fi
+          VERSION="$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')"
           STAGING="dist-macos/Boltbar.app"
           mkdir -p dist-macos
           rm -rf "$STAGING"
