@@ -1,10 +1,10 @@
 #!/bin/sh
 # Install Boltbar on macOS from a GitHub Release, or build from this checkout.
-#   curl -fsSL https://raw.githubusercontent.com/<you>/boltbar/main/install.sh | sh
-#   BOLTBAR_REPO=you/boltbar ./install.sh
+#   curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
+#   BOLTBAR_REPO=juanluisrto/boltbar ./install.sh
 set -eu
 
-REPO="${BOLTBAR_REPO:-}"
+REPO="${BOLTBAR_REPO:-juanluisrto/boltbar}"
 PREFIX="${BOLTBAR_PREFIX:-/Applications}"
 
 if [ -z "$REPO" ]; then

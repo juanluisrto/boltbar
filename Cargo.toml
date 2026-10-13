@@ -6,8 +6,8 @@ members = ["crates/boltbar-core", "src-tauri"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/boltbar/boltbar"
-rust-version = "1.83"
+repository = "https://github.com/juanluisrto/boltbar"
+rust-version = "1.90"
 
 [workspace.dependencies]
 base64 = "0.22"

@@ -35,7 +35,7 @@ A fully native AppKit app would start a few milliseconds faster and look slightl
 After you publish this project to GitHub and a `v0.1.0` release exists (the CI workflow builds a universal `Boltbar-*-universal.zip`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<you>/boltbar/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
 ```
 
 From a clone, on a Mac with Xcode CLT, Rust, and Node:
