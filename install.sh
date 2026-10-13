@@ -71,7 +71,7 @@ if [ -f "./src-tauri/tauri.conf.json" ] && [ -f "./package.json" ]; then
   else
     npm run tauri -- build
   fi
-  APP=$(find target src-tauri/target -path '*/bundle/macos/Boltbar.app' -type d 2>/dev/null | head -n 1)
+  APP=$(find target -path '*/bundle/macos/Boltbar.app' -type d 2>/dev/null | head -n 1 || true)
   [ -n "$APP" ] || die "the build finished without Boltbar.app"
   install_app "$APP"
   exit 0

@@ -46,18 +46,18 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
-          APP="$(find target src-tauri/target -path '*/bundle/macos/Boltbar.app' -type d 2>/dev/null | head -n 1)"
-          if [ -z "$APP" ]; then
-            echo "Boltbar.app not found. Bundle tree:"
-            find target src-tauri/target -iname '*.app' -o -iname '*.dmg' 2>/dev/null | head -n 50
+          APP="target/universal-apple-darwin/release/bundle/macos/Boltbar.app"
+          if [ ! -d "$APP" ]; then
+            echo "Boltbar.app not found at $APP"
+            find target -iname '*.app' -o -iname '*.dmg' | head -n 50
             exit 1
           fi
           VERSION="$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')"
-          STAGING="dist-macos/Boltbar.app"
           mkdir -p dist-macos
-          rm -rf "$STAGING"
-          cp -R "$APP" "$STAGING"
-          ditto -c -k --keepParent "$STAGING" "dist-macos/Boltbar-${VERSION}-universal.zip"
+          ditto -c -k --keepParent "$APP" "dist-macos/Boltbar-${VERSION}-universal.zip"
+          if [ -f "target/universal-apple-darwin/release/bundle/dmg/Boltbar_${VERSION}_universal.dmg" ]; then
+            cp "target/universal-apple-darwin/release/bundle/dmg/Boltbar_${VERSION}_universal.dmg" dist-macos/
+          fi
           ls -lah dist-macos
       - uses: actions/upload-artifact@v4
         with:
