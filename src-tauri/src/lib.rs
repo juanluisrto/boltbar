@@ -127,8 +127,14 @@ async fn hide_bar(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn resize_bar(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
-        let w = width.clamp(520.0, 920.0);
-        let h = height.clamp(72.0, 820.0);
+        let w = width.clamp(
+            boltbar_core::settings::MIN_BAR_WIDTH,
+            boltbar_core::settings::MAX_BAR_WIDTH,
+        );
+        let h = height.clamp(
+            boltbar_core::settings::MIN_BAR_HEIGHT,
+            boltbar_core::settings::MAX_BAR_HEIGHT,
+        );
         win.set_size(LogicalSize::new(w, h))
             .map_err(|e| e.to_string())?;
     }
@@ -233,6 +239,11 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.set_shadow(false);
+                let _ = win.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
+            }
 
             let dir = data_dir(&app.handle());
             let mut settings = load_settings(&dir);

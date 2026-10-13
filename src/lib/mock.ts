@@ -59,7 +59,7 @@ export function defaultSettings(): Settings {
       demo: "boltbar-demo",
     },
     hotkey: "alt+space",
-    input_height: 72,
+    input_height: 120,
     cursor_base_url: null,
   };
 }

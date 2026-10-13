@@ -60,7 +60,7 @@ export default function App() {
   const picking = useRef(false);
 
   const [liveHeight, setLiveHeight] = useState<number | null>(null);
-  const inputHeight = liveHeight ?? settings?.input_height ?? 72;
+  const inputHeight = liveHeight ?? settings?.input_height ?? 120;
   const provider = settings?.provider ?? "demo";
   const current = providers.find((p) => p.id === provider);
   const model = settings?.models[provider] ?? current?.default_model ?? "";
@@ -137,8 +137,8 @@ export default function App() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      const height = rootRef.current?.scrollHeight ?? 96;
-      void resizeBar(720, height + 8);
+      const height = rootRef.current?.scrollHeight ?? 248;
+      void resizeBar(880, height);
     });
     return () => window.cancelAnimationFrame(frame);
   }, [messages, assistant, attachments, settingsOpen, inputHeight, error, notice, draft]);
@@ -504,11 +504,11 @@ export default function App() {
 
 function Shell({ web, children }: { web: boolean; children: ReactNode }) {
   if (!web) {
-    return <div className="p-1">{children}</div>;
+    return children;
   }
   return (
     <div className="web-preview">
-      <div className="mx-auto w-full max-w-[720px]">
+      <div className="mx-auto w-full max-w-[880px]">
         <p className="mb-4 text-center text-sm text-[#c9c2b4]">
           Browser preview of the Boltbar overlay. On macOS the same UI floats
           over every app and opens with Opt+Space.

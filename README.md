@@ -32,7 +32,7 @@ A fully native AppKit app would start a few milliseconds faster and look slightl
 
 ## Install
 
-After you publish this project to GitHub and a `v0.1.0` release exists (the CI workflow builds a universal `Boltbar-*-universal.zip`):
+After a GitHub Release exists (CI builds a universal `Boltbar-*-universal.zip`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -104,7 +104,7 @@ src-tauri             Tauri v2 window, tray, Opt+Space, commands
 src                   React overlay: composer, markdown, attachments, settings
 ```
 
-Release CI (`.github/workflows/ci.yml`) runs Linux tests and, on `macos-latest`, `tauri build --target universal-apple-darwin`. Tag `v0.1.0` to attach the zip to a GitHub Release.
+Release CI (`.github/workflows/ci.yml`) runs Linux tests and, on `macos-latest`, `tauri build --target universal-apple-darwin`. Tag `v0.1.1` (or later) to attach the zip to a GitHub Release.
 
 ## License
 

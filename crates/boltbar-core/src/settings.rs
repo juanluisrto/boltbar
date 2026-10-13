@@ -23,8 +23,14 @@ fn default_hotkey() -> String {
     DEFAULT_HOTKEY.into()
 }
 
+pub const DEFAULT_BAR_WIDTH: f64 = 880.0;
+pub const MIN_BAR_WIDTH: f64 = 680.0;
+pub const MAX_BAR_WIDTH: f64 = 1100.0;
+pub const MIN_BAR_HEIGHT: f64 = 180.0;
+pub const MAX_BAR_HEIGHT: f64 = 900.0;
+
 fn default_input_height() -> u32 {
-    72
+    120
 }
 
 impl Default for Settings {
@@ -100,7 +106,12 @@ pub fn load_settings(app_data_dir: &Path) -> Settings {
     let Ok(raw) = std::fs::read_to_string(path) else {
         return Settings::default();
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    let mut settings: Settings = serde_json::from_str(&raw).unwrap_or_default();
+    // v0.1.0 shipped a 72px composer that is too short on a laptop.
+    if settings.input_height <= 72 {
+        settings.input_height = default_input_height();
+    }
+    settings
 }
 
 pub fn save_settings(app_data_dir: &Path, settings: &Settings) -> crate::error::Result<()> {
@@ -125,6 +136,21 @@ mod tests {
         let loaded = load_settings(&dir);
         assert_eq!(loaded.provider, ProviderKind::Openai);
         assert_eq!(loaded.model_for(ProviderKind::Openai), "gpt-4o-mini");
+        assert_eq!(loaded.input_height, default_input_height());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn migrates_short_v010_composer() {
+        let dir = std::env::temp_dir().join(format!("boltbar-settings-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{"provider":"demo","models":{},"hotkey":"alt+space","input_height":72}"#,
+        )
+        .unwrap();
+        let loaded = load_settings(&dir);
+        assert_eq!(loaded.input_height, 120);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

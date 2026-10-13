@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "boltbar"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "boltbar-core",
@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "boltbar-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "dirs 6.0.0",
