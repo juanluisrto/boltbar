@@ -1,4 +1,6 @@
-use crate::types::ProviderKind;
+use crate::models::fallback_models;
+pub use crate::models::{default_model, models_for};
+use crate::types::{ProviderKind, ThinkingEffort};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,6 +19,8 @@ pub struct Settings {
     /// Optional OpenAI-compatible base URL for the Cursor provider.
     #[serde(default)]
     pub cursor_base_url: Option<String>,
+    #[serde(default)]
+    pub thinking_effort: ThinkingEffort,
 }
 
 fn default_hotkey() -> String {
@@ -49,6 +53,7 @@ impl Default for Settings {
             hotkey: default_hotkey(),
             input_height: default_input_height(),
             cursor_base_url: None,
+            thinking_effort: ThinkingEffort::Medium,
         }
     }
 }
@@ -66,35 +71,12 @@ impl Settings {
     }
 }
 
-pub fn default_model(kind: ProviderKind) -> &'static str {
-    match kind {
-        ProviderKind::Openai => "gpt-4.1",
-        ProviderKind::Anthropic => "claude-sonnet-4-6",
-        ProviderKind::Cursor => "auto",
-        ProviderKind::Demo => "boltbar-demo",
-    }
-}
-
-pub fn models_for(kind: ProviderKind) -> &'static [&'static str] {
-    match kind {
-        ProviderKind::Openai => &[
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "o4-mini",
-            "o3",
-        ],
-        ProviderKind::Anthropic => &[
-            "claude-sonnet-4-6",
-            "claude-opus-4-6",
-            "claude-haiku-4-5",
-            "claude-sonnet-4-5",
-            "claude-3-5-haiku-latest",
-        ],
-        ProviderKind::Cursor => &["auto"],
-        ProviderKind::Demo => &["boltbar-demo"],
-    }
+#[allow(dead_code)]
+pub fn catalog_for(kind: ProviderKind) -> Vec<String> {
+    fallback_models(kind)
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
 }
 
 pub fn settings_path(app_data_dir: &Path) -> PathBuf {
@@ -151,6 +133,7 @@ mod tests {
         .unwrap();
         let loaded = load_settings(&dir);
         assert_eq!(loaded.input_height, 120);
+        assert_eq!(loaded.thinking_effort, ThinkingEffort::Medium);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

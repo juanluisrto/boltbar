@@ -54,6 +54,29 @@ pub struct Attachment {
     pub data_base64: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ThinkingEffort {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
+impl ThinkingEffort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+
+    pub fn all() -> &'static [ThinkingEffort] {
+        &[Self::Low, Self::Medium, Self::High]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub provider: ProviderKind,
@@ -61,6 +84,8 @@ pub struct ChatRequest {
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    #[serde(default)]
+    pub effort: ThinkingEffort,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

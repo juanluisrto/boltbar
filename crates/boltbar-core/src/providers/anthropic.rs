@@ -70,9 +70,11 @@ pub fn messages_body(req: &ChatRequest) -> serde_json::Value {
 
     let mut body = serde_json::json!({
         "model": req.model,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "stream": true,
-        "messages": messages
+        "messages": messages,
+        "thinking": { "type": "adaptive" },
+        "output_config": { "effort": req.effort.as_str() }
     });
     if !system.is_empty() {
         body["system"] = serde_json::Value::String(system);
@@ -162,7 +164,7 @@ mod tests {
         };
         let req = ChatRequest {
             provider: ProviderKind::Anthropic,
-            model: "claude-sonnet-4-6".into(),
+            model: "claude-sonnet-5-5".into(),
             messages: vec![
                 ChatMessage {
                     role: Role::System,
@@ -174,9 +176,12 @@ mod tests {
                 },
             ],
             attachments: vec![img],
+            effort: crate::types::ThinkingEffort::Low,
         };
         let body = messages_body(&req);
         assert_eq!(body["system"], "be brief");
         assert_eq!(body["messages"][0]["content"][1]["type"], "image");
+        assert_eq!(body["output_config"]["effort"], "low");
+        assert_eq!(body["thinking"]["type"], "adaptive");
     }
 }

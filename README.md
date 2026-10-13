@@ -24,11 +24,15 @@ A fully native AppKit app would start a few milliseconds faster and look slightl
 - Global hotkey (default `alt+space`) shows a frameless, always-on-top bar
 - New conversation on every summon
 - Token-by-token streaming with GitHub-flavored markdown and highlighted code
+- Two-level composer: a text box that grows **upward** as you type (then scrolls), plus a compact control row
 - Drag the handle above the composer to resize the input
-- Images and files via drag-and-drop, paste, or a file picker
+- Image thumbnails and document cards (with a remove ✕) when you paste, drop, or attach files
+- Quick **Thinking effort** + model chip (Low / Medium / High, mapped to each provider’s reasoning param)
+- Live model lists from OpenAI `/v1/models`, Anthropic `/v1/models`, and `agent --list-models`, with October 2026 fallbacks
+- Dedicated **Settings** window (⌘, / menu-bar extra) for API keys, auth, and defaults — not in the composer
 - Pluggable providers: **OpenAI**, **Anthropic**, **Cursor**, plus a built-in **Demo**
 - API keys in the **macOS Keychain** (`service = com.boltbar.keys`) — never in `settings.json`
-- Menu-bar extra to show, hide, or quit
+- Menu-bar extra to show, hide, open Settings, or quit
 
 ## Install
 
@@ -57,9 +61,9 @@ The first launch may require **Accessibility** permission so the global hotkey c
 
 1. Launch **Boltbar**. It lives in the menu bar and does not stay in the Dock.
 2. Press **Opt+Space**. Type. Enter sends; Shift+Enter inserts a newline; Esc hides.
-3. Drag the thin handle to grow or shrink the input.
-4. Drop, paste, or attach files. Images go to vision-capable models; text files are inlined.
-5. Open **Settings** in the bar to save API keys and pick the default provider.
+3. Drag the thin handle to grow or shrink the input. The box also grows upward as you type.
+4. Drop, paste, or attach files. Thumbnails appear above the text; click ✕ to remove. Images go to vision-capable models; text files are inlined.
+5. Use the compact chip to change thinking effort and model. Open **Settings** with **⌘,** (or the menu-bar extra) to save API keys and defaults.
 
 The Demo provider works with no login so you can confirm the overlay, streaming, and markdown.
 
@@ -104,7 +108,7 @@ src-tauri             Tauri v2 window, tray, Opt+Space, commands
 src                   React overlay: composer, markdown, attachments, settings
 ```
 
-Release CI (`.github/workflows/ci.yml`) runs Linux tests and, on `macos-latest`, `tauri build --target universal-apple-darwin`. Tag `v0.1.1` (or later) to attach the zip to a GitHub Release.
+Release CI (`.github/workflows/ci.yml`) runs Linux tests and, on `macos-latest`, `tauri build --target universal-apple-darwin`. Tag a version (for example `v0.1.1`) to attach the zip to a GitHub Release.
 
 ## License
 

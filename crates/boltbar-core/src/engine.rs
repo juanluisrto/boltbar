@@ -3,11 +3,13 @@ use crate::auth::commands::SystemCommands;
 use crate::auth::resolve::{AuthPaths, EnvSnapshot, Resolver};
 use crate::auth::secrets::SecretStore;
 use crate::error::{BoltError, Result};
+use crate::models::{fetch_models, merge_with_fallback};
 use crate::providers::{anthropic, cli, cursor, demo, openai};
-use crate::settings::{models_for, Settings};
+use crate::settings::Settings;
 use crate::types::{
     AuthStatus, ProviderInfo, ProviderKind, ResolvedAuth, StreamEvent,
 };
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
@@ -18,6 +20,7 @@ pub struct Engine {
     pub secrets: Arc<dyn SecretStore>,
     pub paths: AuthPaths,
     pub cursor_base_url: Arc<StdMutex<Option<String>>>,
+    model_cache: Arc<StdMutex<HashMap<ProviderKind, Vec<String>>>>,
     cancel: Arc<Mutex<Option<CancellationToken>>>,
 }
 
@@ -31,23 +34,63 @@ impl Engine {
             secrets,
             paths,
             cursor_base_url: Arc::new(StdMutex::new(None)),
+            model_cache: Arc::new(StdMutex::new(HashMap::new())),
             cancel: Arc::new(Mutex::new(None)),
         })
     }
 
-    pub fn providers(&self, settings: &Settings) -> Vec<ProviderInfo> {
-        ProviderKind::all()
-            .iter()
-            .copied()
-            .map(|id| ProviderInfo {
-                id,
-                name: id.label().into(),
-                models: models_for(id).iter().map(|s| (*s).to_string()).collect(),
-                default_model: settings.model_for(id),
-                supports_attachments: !matches!(id, ProviderKind::Demo),
-                auth: self.auth_status(id),
-            })
-            .collect()
+    pub async fn providers(&self, settings: &Settings, refresh: bool) -> Vec<ProviderInfo> {
+        let cursor_base = self.cursor_base_url.lock().unwrap().clone();
+        let mut infos = Vec::new();
+        for id in ProviderKind::all().iter().copied() {
+            let models = self.models_for_kind(id, refresh, cursor_base.as_deref()).await;
+            infos.push(self.provider_info(settings, id, Some(models)));
+        }
+        infos
+    }
+
+    fn provider_info(
+        &self,
+        settings: &Settings,
+        id: ProviderKind,
+        models: Option<Vec<String>>,
+    ) -> ProviderInfo {
+        let models = models.unwrap_or_else(|| {
+            self.model_cache
+                .lock()
+                .ok()
+                .and_then(|cache| cache.get(&id).cloned())
+                .unwrap_or_else(|| merge_with_fallback(id, Vec::new()))
+        });
+        ProviderInfo {
+            id,
+            name: id.label().into(),
+            models,
+            default_model: settings.model_for(id),
+            supports_attachments: !matches!(id, ProviderKind::Demo),
+            auth: self.auth_status(id),
+        }
+    }
+
+    async fn models_for_kind(
+        &self,
+        id: ProviderKind,
+        refresh: bool,
+        cursor_base: Option<&str>,
+    ) -> Vec<String> {
+        if !refresh {
+            if let Ok(cache) = self.model_cache.lock() {
+                if let Some(hit) = cache.get(&id) {
+                    return hit.clone();
+                }
+            }
+        }
+        let auth = self.resolve(id).ok().map(|(auth, _)| auth);
+        let list = fetch_models(&self.http, id, auth.as_ref(), cursor_base).await;
+        if let Ok(mut cache) = self.model_cache.lock() {
+            cache.insert(id, list.clone());
+        }
+        list
     }
 
     pub fn auth_status(&self, provider: ProviderKind) -> AuthStatus {

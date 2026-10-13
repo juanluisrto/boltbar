@@ -41,38 +41,93 @@ function provider(
   };
 }
 
-export function defaultSettings(): Settings {
-  const stored = localStorage.getItem("boltbar.settings");
-  if (stored) {
-    try {
-      return JSON.parse(stored) as Settings;
-    } catch {
-      // fall through
-    }
-  }
+export const FALLBACK_MODELS = {
+  openai: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.2", "gpt-4.1", "gpt-4o"],
+  anthropic: [
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "claude-fable-5-1",
+    "claude-haiku-5-5",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+  ],
+  cursor: [
+    "auto",
+    "composer-2.5",
+    "composer-2.5-fast",
+    "gpt-6-astra",
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+  ],
+  demo: ["boltbar-demo"],
+} as const;
+
+function freshSettings(): Settings {
   return {
     provider: "demo",
     models: {
-      openai: "gpt-4.1",
-      anthropic: "claude-sonnet-4-6",
+      openai: "gpt-6-astra",
+      anthropic: "claude-sonnet-5-5",
       cursor: "auto",
       demo: "boltbar-demo",
     },
     hotkey: "alt+space",
     input_height: 120,
     cursor_base_url: null,
+    thinking_effort: "medium",
   };
+}
+
+export function defaultSettings(): Settings {
+  const stored = localStorage.getItem("boltbar.settings");
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored) as Partial<Settings>;
+      const base = freshSettings();
+      return {
+        ...base,
+        ...parsed,
+        models: { ...base.models, ...parsed.models },
+        thinking_effort: parsed.thinking_effort ?? "medium",
+      };
+    } catch {
+      // fall through
+    }
+  }
+  return freshSettings();
+}
+
+export function mockProviders(): ProviderInfo[] {
+  return [
+    provider(
+      "openai",
+      "OpenAI",
+      [...FALLBACK_MODELS.openai],
+      false,
+      "Add an API key or log in with Codex CLI on macOS",
+    ),
+    provider(
+      "anthropic",
+      "Anthropic",
+      [...FALLBACK_MODELS.anthropic],
+      false,
+      "Add an API key or log in with Claude Code on macOS",
+    ),
+    provider(
+      "cursor",
+      "Cursor",
+      [...FALLBACK_MODELS.cursor],
+      false,
+      "Install the Cursor CLI (`agent`) or set a custom base URL",
+    ),
+    provider("demo", "Demo", [...FALLBACK_MODELS.demo], true, "Built-in demo (no login required)"),
+  ];
 }
 
 export function mockBootstrap(): Bootstrap {
   return {
     settings: defaultSettings(),
-    providers: [
-      provider("openai", "OpenAI", ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "o3"], false, "Add an API key or log in with Codex CLI on macOS"),
-      provider("anthropic", "Anthropic", ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"], false, "Add an API key or log in with Claude Code on macOS"),
-      provider("cursor", "Cursor", ["auto"], false, "Install the Cursor CLI (`agent`) or set a custom base URL"),
-      provider("demo", "Demo", ["boltbar-demo"], true, "Built-in demo (no login required)"),
-    ],
+    providers: mockProviders(),
     keychain_native: false,
   };
 }

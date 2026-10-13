@@ -37,6 +37,29 @@ export async function saveUserSettings(settings: Settings): Promise<ProviderInfo
   return invoke<ProviderInfo[]>("save_user_settings", { settings });
 }
 
+export async function refreshModels(): Promise<ProviderInfo[]> {
+  if (!isTauri()) {
+    return mockBootstrap().providers;
+  }
+  return invoke<ProviderInfo[]>("refresh_models");
+}
+
+export async function openSettings(): Promise<void> {
+  if (!isTauri()) {
+    window.location.hash = "settings";
+    return;
+  }
+  await invoke("open_settings");
+}
+
+export async function closeSettings(): Promise<void> {
+  if (!isTauri()) {
+    window.location.hash = "";
+    return;
+  }
+  await invoke("close_settings");
+}
+
 export async function setApiKey(
   provider: ProviderKind,
   key: string,

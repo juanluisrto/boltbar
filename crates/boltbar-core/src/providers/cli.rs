@@ -49,6 +49,8 @@ pub async fn stream_cli(
                 "--output-format",
                 "stream-json",
                 "--stream-partial-output",
+                "--model",
+                &req.model,
             ]);
             cmd.arg(&prompt);
         }
@@ -246,7 +248,7 @@ mod tests {
     fn builds_prompt_with_history() {
         let req = ChatRequest {
             provider: ProviderKind::Openai,
-            model: "gpt-4.1".into(),
+            model: "gpt-6-astra".into(),
             messages: vec![
                 crate::types::ChatMessage {
                     role: Role::System,
@@ -258,6 +260,7 @@ mod tests {
                 },
             ],
             attachments: vec![],
+            effort: crate::types::ThinkingEffort::Medium,
         };
         let prompt = build_prompt(&req);
         assert!(prompt.contains("System: short"));

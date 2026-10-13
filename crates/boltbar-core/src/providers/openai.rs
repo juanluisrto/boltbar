@@ -54,7 +54,8 @@ pub fn chat_completions_body(req: &ChatRequest) -> serde_json::Value {
     serde_json::json!({
         "model": req.model,
         "stream": true,
-        "messages": messages
+        "messages": messages,
+        "reasoning_effort": req.effort.as_str()
     })
 }
 
@@ -67,7 +68,8 @@ pub fn responses_body(req: &ChatRequest) -> serde_json::Value {
     serde_json::json!({
         "model": req.model,
         "stream": true,
-        "input": input
+        "input": input,
+        "reasoning": { "effort": req.effort.as_str() }
     })
 }
 
@@ -232,6 +234,7 @@ mod tests {
                 content: "what is this?".into(),
             }],
             attachments: vec![img],
+            effort: crate::types::ThinkingEffort::Medium,
         };
         let body = chat_completions_body(&req);
         let content = &body["messages"][0]["content"];
@@ -248,15 +251,17 @@ mod tests {
         };
         let req = ChatRequest {
             provider: ProviderKind::Openai,
-            model: "gpt-4.1".into(),
+            model: "gpt-6-astra".into(),
             messages: vec![ChatMessage {
                 role: Role::User,
                 content: "summarize".into(),
             }],
             attachments: vec![file],
+            effort: crate::types::ThinkingEffort::High,
         };
         let body = chat_completions_body(&req);
         let text = body["messages"][0]["content"].as_str().unwrap();
         assert!(text.contains("secret notes"));
+        assert_eq!(body["reasoning_effort"], "high");
     }
 }

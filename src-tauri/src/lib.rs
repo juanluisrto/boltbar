@@ -11,7 +11,8 @@ use tauri::{
     include_image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, LogicalSize, Manager, State,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl,
+    WebviewWindowBuilder,
 };
 use tokio::sync::Mutex;
 
@@ -36,7 +37,7 @@ fn data_dir(app: &AppHandle) -> std::path::PathBuf {
 #[tauri::command]
 async fn bootstrap(app: AppHandle, state: State<'_, AppState>) -> Result<Bootstrap, String> {
     let settings = state.settings.lock().await.clone();
-    let providers = state.engine.providers(&settings);
+    let providers = state.engine.providers(&settings, true).await;
     let _ = app;
     Ok(Bootstrap {
         settings,
@@ -59,7 +60,7 @@ async fn save_user_settings(
     if let Err(err) = register_hotkey(&app, &settings.hotkey) {
         eprintln!("boltbar: could not register hotkey: {err}");
     }
-    let providers = state.engine.providers(&settings);
+    let providers = state.engine.providers(&settings, false).await;
     *state.settings.lock().await = settings;
     Ok(providers)
 }
@@ -88,6 +89,25 @@ async fn set_api_key(
             .map_err(|e| e.to_string())?;
     }
     Ok(state.engine.auth_status(provider))
+}
+
+#[tauri::command]
+async fn refresh_models(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, String> {
+    let settings = state.settings.lock().await.clone();
+    Ok(state.engine.providers(&settings, true).await)
+}
+
+#[tauri::command]
+async fn open_settings(app: AppHandle) -> Result<(), String> {
+    open_settings_window(&app)
+}
+
+#[tauri::command]
+async fn close_settings(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("settings") {
+        win.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -135,6 +155,15 @@ async fn resize_bar(app: AppHandle, width: f64, height: f64) -> Result<(), Strin
             boltbar_core::settings::MIN_BAR_HEIGHT,
             boltbar_core::settings::MAX_BAR_HEIGHT,
         );
+        let scale = win.scale_factor().unwrap_or(1.0);
+        if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
+            let old_h = f64::from(size.height) / scale;
+            let delta = h - old_h;
+            if delta.abs() > 0.5 {
+                let new_y = f64::from(pos.y) - delta * scale;
+                let _ = win.set_position(PhysicalPosition::new(pos.x, new_y.round() as i32));
+            }
+        }
         win.set_size(LogicalSize::new(w, h))
             .map_err(|e| e.to_string())?;
     }
@@ -180,6 +209,27 @@ fn guess_mime(name: &str) -> String {
         _ => "application/octet-stream",
     }
     .into()
+}
+
+fn open_settings_window(app: &AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("settings") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html#settings".into()))
+        .title("Boltbar Settings")
+        .inner_size(560.0, 720.0)
+        .min_inner_size(440.0, 520.0)
+        .decorations(true)
+        .transparent(false)
+        .resizable(true)
+        .center()
+        .visible(true)
+        .skip_taskbar(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn show_bar(app: &AppHandle) {
@@ -262,9 +312,11 @@ pub fn run() {
             }
 
             let show = MenuItem::with_id(app, "show", "New chat", true, Some("Alt+Space"))?;
+            let settings_item =
+                MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
             let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Boltbar", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &settings_item, &hide, &quit])?;
             let icon: Image<'_> = include_image!("icons/32x32.png");
             TrayIconBuilder::new()
                 .icon(icon)
@@ -272,6 +324,9 @@ pub fn run() {
                 .tooltip("Boltbar")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => show_bar(app),
+                    "settings" => {
+                        let _ = open_settings_window(app);
+                    }
                     "hide" => hide_main(app),
                     "quit" => app.exit(0),
                     _ => {}
@@ -301,6 +356,9 @@ pub fn run() {
             bootstrap,
             save_user_settings,
             set_api_key,
+            refresh_models,
+            open_settings,
+            close_settings,
             start_chat,
             stop_chat,
             hide_bar,

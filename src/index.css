@@ -53,10 +53,82 @@ textarea {
 
 .web-preview {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   background:
     radial-gradient(1200px 600px at 50% -10%, #2a2418 0%, transparent 55%),
     #0b0b0c;
-  padding: 12vh 16px 40px;
+  padding: 8vh 16px 28vh;
+}
+
+.web-settings {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #2a2418 0%, transparent 55%),
+    #0b0b0c;
+  padding: 40px 16px;
+}
+
+.settings-window,
+.settings-page {
+  width: 100%;
+  max-width: 560px;
+  max-height: 86vh;
+  overflow: auto;
+  color-scheme: dark;
+  background: #161618;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  padding: 22px 22px 28px;
+}
+
+.settings-native {
+  min-height: 100vh;
+  background: #121214;
+  padding: 18px 16px 28px;
+}
+
+.settings-native .settings-page {
+  max-width: none;
+  max-height: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 4px 8px 16px;
+}
+
+.effort-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gold) 0%, var(--gold) var(--effort, 50%), rgba(255, 255, 255, 0.14) var(--effort, 50%));
+  outline: none;
+}
+
+.effort-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f4f1ea;
+  border: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.effort-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f4f1ea;
+  border: 0;
 }
 
 .markdown {

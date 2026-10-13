@@ -2,6 +2,8 @@ export type ProviderKind = "openai" | "anthropic" | "cursor" | "demo";
 
 export type Role = "system" | "user" | "assistant";
 
+export type ThinkingEffort = "low" | "medium" | "high";
+
 export type AuthKind =
   | "api_key"
   | "env"
@@ -26,6 +28,7 @@ export interface ChatRequest {
   model: string;
   messages: ChatMessage[];
   attachments: Attachment[];
+  effort: ThinkingEffort;
 }
 
 export type StreamEvent =
@@ -55,6 +58,7 @@ export interface Settings {
   hotkey: string;
   input_height: number;
   cursor_base_url: string | null;
+  thinking_effort: ThinkingEffort;
 }
 
 export interface Bootstrap {
@@ -100,3 +104,20 @@ export function authKindLabel(kind: AuthKind): string {
     }
   }
 }
+
+export function effortLabel(effort: ThinkingEffort): string {
+  switch (effort) {
+    case "low":
+      return "Low";
+    case "medium":
+      return "Medium";
+    case "high":
+      return "High";
+    default: {
+      const _never: never = effort;
+      return _never;
+    }
+  }
+}
+
+export const EFFORTS: ThinkingEffort[] = ["low", "medium", "high"];

@@ -1,13 +1,14 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ClipboardEvent,
   type ReactNode,
 } from "react";
+import { AttachmentThumbs } from "./components/AttachmentThumbs";
 import { MarkdownView } from "./components/MarkdownView";
+import { ModelChip } from "./components/ModelChip";
 import { ResizeHandle } from "./components/ResizeHandle";
 import {
   bootstrap,
@@ -15,30 +16,28 @@ import {
   isTauri,
   onChatEvent,
   onConversationReset,
+  openSettings,
   pickFilePaths,
   readFiles,
   resizeBar,
   saveUserSettings,
-  setApiKey,
   startChat,
   stopChat,
 } from "./lib/api";
-import {
-  attachmentPreviewUrl,
-  fileToAttachment,
-  isImageAttachment,
-} from "./lib/attachments";
+import { fileToAttachment } from "./lib/attachments";
 import type {
   Attachment,
   Bootstrap,
   ChatMessage,
   ProviderInfo,
-  ProviderKind,
   Settings,
 } from "./types";
-import { authKindLabel, providerLabel } from "./types";
+import { providerLabel } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
+
+const MIN_INPUT = 96;
+const MAX_INPUT = 280;
 
 export default function App() {
   const [load, setLoad] = useState<LoadState>("loading");
@@ -51,19 +50,21 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assistant, setAssistant] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chipOpen, setChipOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const picking = useRef(false);
-
+  const [contentHeight, setContentHeight] = useState(MIN_INPUT);
   const [liveHeight, setLiveHeight] = useState<number | null>(null);
-  const inputHeight = liveHeight ?? settings?.input_height ?? 120;
+
+  const floorHeight = liveHeight ?? settings?.input_height ?? 120;
+  const inputHeight = Math.min(MAX_INPUT, Math.max(MIN_INPUT, Math.max(floorHeight, contentHeight)));
   const provider = settings?.provider ?? "demo";
   const current = providers.find((p) => p.id === provider);
   const model = settings?.models[provider] ?? current?.default_model ?? "";
+  const effort = settings?.thinking_effort ?? "medium";
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +97,7 @@ export default function App() {
     setDraft("");
     setAttachments([]);
     setStreaming(false);
-    setSettingsOpen(false);
+    setChipOpen(false);
     setError(null);
     setNotice(null);
     window.setTimeout(() => inputRef.current?.focus(), 30);
@@ -136,18 +137,36 @@ export default function App() {
   }, [resetConversation]);
 
   useEffect(() => {
+    const el = inputRef.current;
+    if (!el) {
+      return;
+    }
+    const previous = el.style.height;
+    el.style.height = "0px";
+    const next = Math.min(MAX_INPUT, Math.max(MIN_INPUT, el.scrollHeight));
+    el.style.height = previous;
+    setContentHeight(next);
+  }, [draft]);
+
+  useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const height = rootRef.current?.scrollHeight ?? 248;
       void resizeBar(880, height);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, assistant, attachments, settingsOpen, inputHeight, error, notice, draft]);
+  }, [messages, assistant, attachments, chipOpen, inputHeight, error, notice, draft]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+        event.preventDefault();
+        setChipOpen(false);
+        void openSettings();
+        return;
+      }
       if (event.key === "Escape") {
-        if (settingsOpen) {
-          setSettingsOpen(false);
+        if (chipOpen) {
+          setChipOpen(false);
           return;
         }
         void hideBar();
@@ -155,11 +174,11 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [settingsOpen]);
+  }, [chipOpen]);
 
   useEffect(() => {
     const onBlur = () => {
-      if (!isTauri() || picking.current || settingsOpen) {
+      if (!isTauri() || picking.current || chipOpen) {
         return;
       }
       window.setTimeout(() => {
@@ -171,16 +190,13 @@ export default function App() {
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
-  }, [settingsOpen]);
+  }, [chipOpen]);
 
-  const persist = useCallback(
-    async (next: Settings) => {
-      setSettings(next);
-      const updated = await saveUserSettings(next);
-      setProviders(updated);
-    },
-    [],
-  );
+  const persist = useCallback(async (next: Settings) => {
+    setSettings(next);
+    const updated = await saveUserSettings(next);
+    setProviders(updated);
+  }, []);
 
   const addFiles = useCallback(async (files: File[]) => {
     try {
@@ -190,6 +206,20 @@ export default function App() {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
+
+  useEffect(() => {
+    if (isTauri()) {
+      return;
+    }
+    const handler = (event: Event) => {
+      const files = (event as CustomEvent<File[]>).detail;
+      if (Array.isArray(files) && files.length) {
+        void addFiles(files);
+      }
+    };
+    window.addEventListener("boltbar-add-files", handler);
+    return () => window.removeEventListener("boltbar-add-files", handler);
+  }, [addFiles]);
 
   const onPick = useCallback(async () => {
     picking.current = true;
@@ -234,19 +264,21 @@ export default function App() {
     setAssistant("");
     setStreaming(true);
     setError(null);
+    setChipOpen(false);
     try {
       await startChat({
         provider,
         model,
         messages: history,
         attachments,
+        effort,
       });
       setAttachments([]);
     } catch (err) {
       setStreaming(false);
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [attachments, draft, messages, model, provider, settings, streaming]);
+  }, [attachments, draft, effort, messages, model, provider, settings, streaming]);
 
   const onPaste = useCallback(
     (event: ClipboardEvent) => {
@@ -260,17 +292,7 @@ export default function App() {
   );
 
   const web = !isTauri();
-  const hasThread = messages.length > 0 || Boolean(assistant) || settingsOpen;
-
-  const status = useMemo(() => {
-    if (!current) {
-      return "Choose a provider";
-    }
-    if (current.auth.ready) {
-      return current.auth.label;
-    }
-    return current.auth.label;
-  }, [current]);
+  const hasThread = messages.length > 0 || Boolean(assistant);
 
   if (load === "loading") {
     return (
@@ -296,7 +318,7 @@ export default function App() {
     <Shell web={web}>
       <div
         ref={rootRef}
-        className={`glass overflow-hidden rounded-[18px] ${dragOver ? "outline outline-2 outline-[var(--gold)]" : ""}`}
+        className={`glass overflow-visible rounded-[18px] ${dragOver ? "outline outline-2 outline-[var(--gold)]" : ""}`}
         onDragOver={(event) => {
           event.preventDefault();
           setDragOver(true);
@@ -313,7 +335,7 @@ export default function App() {
           data-tauri-drag-region
         >
           <span data-tauri-drag-region>Boltbar</span>
-          <span data-tauri-drag-region>{web ? "Web preview" : "Opt+Space · Esc hides"}</span>
+          <span data-tauri-drag-region>{web ? "Web preview · ⌘," : "Opt+Space · ⌘, settings"}</span>
         </header>
 
         {hasThread && (
@@ -343,19 +365,6 @@ export default function App() {
                 )}
               </article>
             )}
-            {settingsOpen && (
-              <SettingsPanel
-                settings={settings}
-                providers={providers}
-                keychainNative={boot.keychain_native}
-                keyDrafts={keyDrafts}
-                onKeyDrafts={setKeyDrafts}
-                onNotice={setNotice}
-                onError={setError}
-                onProviders={setProviders}
-                onChange={(next) => void persist(next)}
-              />
-            )}
           </div>
         )}
 
@@ -370,44 +379,24 @@ export default function App() {
           </div>
         )}
 
-        {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-4 pb-1">
-            {attachments.map((att, idx) => (
-              <button
-                key={`${att.name}-${idx}`}
-                type="button"
-                className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-left text-xs"
-                onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
-              >
-                {isImageAttachment(att) && attachmentPreviewUrl(att) ? (
-                  <img
-                    src={attachmentPreviewUrl(att) ?? ""}
-                    alt=""
-                    className="h-8 w-8 rounded object-cover"
-                  />
-                ) : (
-                  <span className="text-[var(--gold)]">file</span>
-                )}
-                <span className="max-w-[140px] truncate">{att.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <ResizeHandle
+          value={inputHeight}
+          min={MIN_INPUT}
+          max={MAX_INPUT}
+          invert
+          onChange={setLiveHeight}
+          onCommit={(height) => {
+            setLiveHeight(null);
+            void persist({ ...settings, input_height: Math.round(height) });
+          }}
+        />
 
-        {hasThread && (
-          <ResizeHandle
-            value={inputHeight}
-            min={48}
-            max={280}
-            onChange={setLiveHeight}
-            onCommit={(height) => {
-              setLiveHeight(null);
-              void persist({ ...settings, input_height: Math.round(height) });
-            }}
-          />
-        )}
+        <AttachmentThumbs
+          attachments={attachments}
+          onRemove={(idx) => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+        />
 
-        <div className="px-3 pb-2">
+        <div className="px-3">
           <textarea
             ref={inputRef}
             value={draft}
@@ -415,10 +404,12 @@ export default function App() {
             placeholder={
               current?.auth.ready
                 ? "Ask anything — a new conversation starts each time this bar opens"
-                : "This provider is not connected. Open settings or switch to Demo."
+                : "This provider is not connected. Open Settings (⌘,) or switch to Demo."
             }
             style={{ height: inputHeight }}
-            className="w-full resize-none rounded-xl border-0 bg-white/5 px-3 py-3 text-[15px] text-[var(--text)] outline-none placeholder:text-[var(--muted)]"
+            className={`w-full resize-none border-0 bg-transparent px-1 py-1 text-[15px] text-[var(--text)] outline-none placeholder:text-[var(--muted)] ${
+              inputHeight >= MAX_INPUT ? "overflow-y-auto" : "overflow-hidden"
+            }`}
             onChange={(event) => setDraft(event.target.value)}
             onPaste={onPaste}
             onKeyDown={(event) => {
@@ -430,75 +421,62 @@ export default function App() {
           />
         </div>
 
-        <footer className="flex flex-wrap items-center gap-2 px-3 pb-3">
-          <select
-            value={provider}
-            className="rounded-lg border border-white/10 bg-[#1b1b1d] px-2 py-1 text-xs"
-            onChange={(event) => {
-              const next = event.target.value as ProviderKind;
-              void persist({ ...settings, provider: next });
-            }}
-          >
-            {providers.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-                {item.auth.ready ? "" : " · not ready"}
-              </option>
-            ))}
-          </select>
-          <select
-            value={model}
-            className="max-w-[180px] rounded-lg border border-white/10 bg-[#1b1b1d] px-2 py-1 text-xs"
-            onChange={(event) => {
-              void persist({
-                ...settings,
-                models: { ...settings.models, [provider]: event.target.value },
-              });
-            }}
-          >
-            {(current?.models ?? [model]).map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+        <footer className="flex items-center gap-2 px-3 pb-3 pt-1">
           <button
             type="button"
-            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs"
+            aria-label="Attach files"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-lg leading-none text-[var(--text)]"
             onClick={() => void onPick()}
           >
-            Attach
+            +
           </button>
-          <button
-            type="button"
-            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs"
-            onClick={() => setSettingsOpen((v) => !v)}
-          >
-            Settings
-          </button>
+          <ModelChip
+            open={chipOpen}
+            onOpenChange={setChipOpen}
+            provider={provider}
+            model={model}
+            effort={effort}
+            providers={providers}
+            onEffort={(next) => void persist({ ...settings, thinking_effort: next })}
+            onSelect={(nextProvider, nextModel) =>
+              void persist({
+                ...settings,
+                provider: nextProvider,
+                models: { ...settings.models, [nextProvider]: nextModel },
+              })
+            }
+          />
+          <span className="ml-auto" />
           {streaming ? (
             <button
               type="button"
-              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs"
+              aria-label="Stop"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/8"
               onClick={() => void stopChat()}
             >
-              Stop
+              <span className="block h-2.5 w-2.5 rounded-[2px] bg-[var(--text)]" />
             </button>
           ) : (
             <button
               type="button"
-              className="rounded-lg bg-[var(--gold)] px-3 py-1 text-xs font-medium text-black"
+              aria-label="Send"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--gold)] text-black"
               onClick={() => void send()}
             >
-              Send
+              <SendIcon />
             </button>
           )}
-          <span className="ml-auto max-w-[46%] truncate text-[11px] text-[var(--muted)]">
-            {authKindLabel(current?.auth.kind ?? "missing")} · {status}
-          </span>
         </footer>
       </div>
     </Shell>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M8 12.5V3.5M8 3.5 3.5 8M8 3.5 12.5 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -511,119 +489,10 @@ function Shell({ web, children }: { web: boolean; children: ReactNode }) {
       <div className="mx-auto w-full max-w-[880px]">
         <p className="mb-4 text-center text-sm text-[#c9c2b4]">
           Browser preview of the Boltbar overlay. On macOS the same UI floats
-          over every app and opens with Opt+Space.
+          over every app and opens with Opt+Space. Settings open with ⌘,.
         </p>
         {children}
       </div>
     </div>
-  );
-}
-
-function SettingsPanel({
-  settings,
-  providers,
-  keychainNative,
-  keyDrafts,
-  onKeyDrafts,
-  onNotice,
-  onError,
-  onProviders,
-  onChange,
-}: {
-  settings: Settings;
-  providers: ProviderInfo[];
-  keychainNative: boolean;
-  keyDrafts: Record<string, string>;
-  onKeyDrafts: (next: Record<string, string>) => void;
-  onNotice: (text: string | null) => void;
-  onError: (text: string | null) => void;
-  onProviders: (next: ProviderInfo[]) => void;
-  onChange: (next: Settings) => void;
-}) {
-  return (
-    <section className="rounded-xl border border-white/10 bg-black/25 p-3">
-      <h2 className="mb-2 text-sm font-medium">Settings</h2>
-      <p className="mb-3 text-xs leading-relaxed text-[var(--muted)]">
-        API keys are written to the macOS Keychain
-        {keychainNative ? "" : " when running as the Mac app"}
-        . They are never stored in settings.json. Subscription reuse reads the
-        official Codex, Claude Code, or Cursor CLI login — Boltbar does not
-        refresh those tokens itself.
-      </p>
-      <label className="mb-3 block text-xs text-[var(--muted)]">
-        Hotkey
-        <input
-          value={settings.hotkey}
-          className="mt-1 w-full rounded-lg border border-white/10 bg-[#1b1b1d] px-2 py-1 text-sm text-[var(--text)]"
-          onChange={(event) => onChange({ ...settings, hotkey: event.target.value })}
-        />
-      </label>
-      <label className="mb-3 block text-xs text-[var(--muted)]">
-        Cursor OpenAI-compatible base URL (optional)
-        <input
-          value={settings.cursor_base_url ?? ""}
-          placeholder="https://proxy.example/v1"
-          className="mt-1 w-full rounded-lg border border-white/10 bg-[#1b1b1d] px-2 py-1 text-sm text-[var(--text)]"
-          onChange={(event) =>
-            onChange({
-              ...settings,
-              cursor_base_url: event.target.value.trim() || null,
-            })
-          }
-        />
-      </label>
-      <div className="space-y-3">
-        {providers
-          .filter((p) => p.id !== "demo")
-          .map((item) => (
-            <div key={item.id} className="rounded-lg border border-white/8 bg-white/3 p-2">
-              <div className="mb-1 flex items-center justify-between text-xs">
-                <strong className="text-[var(--text)]">{item.name}</strong>
-                <span className={item.auth.ready ? "text-emerald-300" : "text-amber-200"}>
-                  {item.auth.ready ? "Ready" : "Needs setup"}
-                </span>
-              </div>
-              <p className="mb-2 text-[11px] leading-relaxed text-[var(--muted)]">
-                {item.auth.label}
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  autoComplete="off"
-                  placeholder={`${item.name} API key`}
-                  value={keyDrafts[item.id] ?? ""}
-                  className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#1b1b1d] px-2 py-1 text-sm"
-                  onChange={(event) =>
-                    onKeyDrafts({ ...keyDrafts, [item.id]: event.target.value })
-                  }
-                />
-                <button
-                  type="button"
-                  className="rounded-lg bg-white/10 px-2 py-1 text-xs"
-                  onClick={() => {
-                    void setApiKey(item.id, keyDrafts[item.id] ?? "")
-                      .then((auth) => {
-                        onProviders(
-                          providers.map((p) => (p.id === item.id ? { ...p, auth } : p)),
-                        );
-                        onNotice(
-                          auth.ready
-                            ? `${item.name} key saved`
-                            : `${item.name} key cleared`,
-                        );
-                        onError(null);
-                      })
-                      .catch((err: unknown) => {
-                        onError(err instanceof Error ? err.message : String(err));
-                      });
-                  }}
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          ))}
-      </div>
-    </section>
   );
 }

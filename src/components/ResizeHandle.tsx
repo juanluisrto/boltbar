@@ -4,12 +4,14 @@ export function ResizeHandle({
   value,
   min,
   max,
+  invert = false,
   onChange,
   onCommit,
 }: {
   value: number;
   min: number;
   max: number;
+  invert?: boolean;
   onChange: (next: number) => void;
   onCommit?: (next: number) => void;
 }) {
@@ -22,7 +24,9 @@ export function ResizeHandle({
       if (!start.current) {
         return;
       }
-      const delta = event.clientY - start.current.y;
+      const delta = invert
+        ? start.current.y - event.clientY
+        : event.clientY - start.current.y;
       const next = Math.min(max, Math.max(min, start.current.height + delta));
       latest.current = next;
       onChange(next);
@@ -40,7 +44,7 @@ export function ResizeHandle({
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     };
-  }, [max, min, onChange, onCommit]);
+  }, [invert, max, min, onChange, onCommit]);
 
   return (
     <button
