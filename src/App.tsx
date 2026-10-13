@@ -10,6 +10,8 @@ import { AttachmentThumbs } from "./components/AttachmentThumbs";
 import { MarkdownView } from "./components/MarkdownView";
 import { ModelChip } from "./components/ModelChip";
 import { ResizeHandle } from "./components/ResizeHandle";
+import { IconButton } from "./components/ui/icon-button";
+import { ArrowUpIcon, PlusIcon, StopIcon } from "./components/ui/icon";
 import {
   bootstrap,
   hideBar,
@@ -150,8 +152,10 @@ export default function App() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      const height = rootRef.current?.scrollHeight ?? 248;
-      void resizeBar(880, height);
+      const el = rootRef.current;
+      const width = el?.offsetWidth ?? 908;
+      const height = el?.scrollHeight ?? 276;
+      void resizeBar(width, height);
     });
     return () => window.cancelAnimationFrame(frame);
   }, [messages, assistant, attachments, chipOpen, inputHeight, error, notice, draft]);
@@ -297,8 +301,10 @@ export default function App() {
   if (load === "loading") {
     return (
       <Shell web={web}>
-        <div ref={rootRef} className="glass rounded-[18px] px-5 py-4 text-sm text-[var(--muted)]">
-          Waking Boltbar…
+        <div ref={rootRef} className="overlay-frame">
+          <div className="glass rounded-[22px] px-5 py-4 text-sm text-[var(--muted)]">
+            Waking Boltbar…
+          </div>
         </div>
       </Shell>
     );
@@ -307,8 +313,10 @@ export default function App() {
   if (load === "error" || !settings || !boot) {
     return (
       <Shell web={web}>
-        <div ref={rootRef} className="glass rounded-[18px] px-5 py-4">
-          <p className="text-sm text-red-300">{error ?? "Could not start Boltbar."}</p>
+        <div ref={rootRef} className="overlay-frame">
+          <div className="glass rounded-[22px] px-5 py-4">
+            <p className="text-sm text-red-300">{error ?? "Could not start Boltbar."}</p>
+          </div>
         </div>
       </Shell>
     );
@@ -316,9 +324,9 @@ export default function App() {
 
   return (
     <Shell web={web}>
+      <div ref={rootRef} className="overlay-frame">
       <div
-        ref={rootRef}
-        className={`glass overflow-visible rounded-[18px] ${dragOver ? "outline outline-2 outline-[var(--gold)]" : ""}`}
+        className={`glass overflow-hidden rounded-[22px] ${dragOver ? "outline outline-2 outline-[var(--gold)]" : ""}`}
         onDragOver={(event) => {
           event.preventDefault();
           setDragOver(true);
@@ -421,62 +429,41 @@ export default function App() {
           />
         </div>
 
-        <footer className="flex items-center gap-2 px-5 pb-5 pt-1">
-          <button
-            type="button"
-            aria-label="Attach files"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-lg leading-none text-[var(--text)]"
-            onClick={() => void onPick()}
-          >
-            +
-          </button>
-          <ModelChip
-            open={chipOpen}
-            onOpenChange={setChipOpen}
-            provider={provider}
-            model={model}
-            effort={effort}
-            providers={providers}
-            onEffort={(next) => void persist({ ...settings, thinking_effort: next })}
-            onSelect={(nextProvider, nextModel) =>
-              void persist({
-                ...settings,
-                provider: nextProvider,
-                models: { ...settings.models, [nextProvider]: nextModel },
-              })
-            }
-          />
-          <span className="ml-auto" />
+        <footer className="flex min-w-0 items-center gap-2 px-4 pb-4 pt-1">
+          <IconButton aria-label="Attach files" onClick={() => void onPick()}>
+            <PlusIcon />
+          </IconButton>
+          <div className="min-w-0 flex-1">
+            <ModelChip
+              open={chipOpen}
+              onOpenChange={setChipOpen}
+              provider={provider}
+              model={model}
+              effort={effort}
+              providers={providers}
+              onEffort={(next) => void persist({ ...settings, thinking_effort: next })}
+              onSelect={(nextProvider, nextModel) =>
+                void persist({
+                  ...settings,
+                  provider: nextProvider,
+                  models: { ...settings.models, [nextProvider]: nextModel },
+                })
+              }
+            />
+          </div>
           {streaming ? (
-            <button
-              type="button"
-              aria-label="Stop"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/8"
-              onClick={() => void stopChat()}
-            >
-              <span className="block h-2.5 w-2.5 rounded-[2px] bg-[var(--text)]" />
-            </button>
+            <IconButton aria-label="Stop" onClick={() => void stopChat()}>
+              <StopIcon />
+            </IconButton>
           ) : (
-            <button
-              type="button"
-              aria-label="Send"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--gold)] text-black"
-              onClick={() => void send()}
-            >
-              <SendIcon />
-            </button>
+            <IconButton variant="gold" aria-label="Send" onClick={() => void send()}>
+              <ArrowUpIcon />
+            </IconButton>
           )}
         </footer>
       </div>
+      </div>
     </Shell>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path d="M8 12.5V3.5M8 3.5 3.5 8M8 3.5 12.5 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
@@ -486,8 +473,8 @@ function Shell({ web, children }: { web: boolean; children: ReactNode }) {
   }
   return (
     <div className="web-preview">
-      <div className="mx-auto w-full max-w-[880px]">
-        <p className="mb-4 text-center text-sm text-[#c9c2b4]">
+      <div className="mx-auto w-full max-w-[920px]">
+        <p className="mb-4 px-4 text-center text-sm text-[#c9c2b4]">
           Browser preview of the Boltbar overlay. On macOS the same UI floats
           over every app and opens with Opt+Space. Settings open with ⌘,.
         </p>

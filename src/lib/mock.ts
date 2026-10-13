@@ -42,14 +42,12 @@ function provider(
 }
 
 export const FALLBACK_MODELS = {
-  openai: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.2", "gpt-4.1", "gpt-4o"],
+  openai: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
   anthropic: [
     "claude-sonnet-5-5",
     "claude-opus-5-5",
     "claude-fable-5-1",
     "claude-haiku-5-5",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
   ],
   cursor: [
     "auto",

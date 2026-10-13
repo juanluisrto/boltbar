@@ -30,7 +30,7 @@ fn default_hotkey() -> String {
 pub const DEFAULT_BAR_WIDTH: f64 = 880.0;
 pub const MIN_BAR_WIDTH: f64 = 680.0;
 pub const MAX_BAR_WIDTH: f64 = 1100.0;
-pub const MIN_BAR_HEIGHT: f64 = 180.0;
+pub const MIN_BAR_HEIGHT: f64 = 220.0;
 pub const MAX_BAR_HEIGHT: f64 = 900.0;
 
 fn default_input_height() -> u32 {

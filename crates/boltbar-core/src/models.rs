@@ -11,21 +11,12 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 /// Live `/v1/models` (or `agent --list-models`) replaces these when reachable.
 pub fn fallback_models(kind: ProviderKind) -> &'static [&'static str] {
     match kind {
-        ProviderKind::Openai => &[
-            "gpt-6-astra",
-            "gpt-6.1-sol",
-            "gpt-6-luna",
-            "gpt-5.2",
-            "gpt-4.1",
-            "gpt-4o",
-        ],
+        ProviderKind::Openai => &["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
         ProviderKind::Anthropic => &[
             "claude-sonnet-5-5",
             "claude-opus-5-5",
             "claude-fable-5-1",
             "claude-haiku-5-5",
-            "claude-sonnet-4-6",
-            "claude-opus-4-6",
         ],
         ProviderKind::Cursor => &[
             "auto",
@@ -75,7 +66,7 @@ pub fn parse_openai_models_json(body: &str) -> Vec<String> {
         .data
         .into_iter()
         .map(|m| m.id)
-        .filter(|id| is_openai_chat_model(id))
+        .filter(|id| is_current_openai_chat_model(id))
         .collect();
     rank_models(ProviderKind::Openai, dedupe_dated_aliases(raw))
 }
@@ -86,7 +77,7 @@ pub fn parse_anthropic_models_json(body: &str) -> Vec<String> {
         .data
         .into_iter()
         .map(|m| m.id)
-        .filter(|id| is_anthropic_chat_model(id))
+        .filter(|id| is_current_anthropic_chat_model(id))
         .collect();
     rank_models(ProviderKind::Anthropic, raw)
 }
@@ -111,7 +102,7 @@ pub fn parse_cursor_models_output(text: &str) -> Vec<String> {
         } else {
             line.split_whitespace().next().unwrap_or("")
         };
-        if is_cursor_model_id(id) && !out.iter().any(|existing| existing == id) {
+        if is_current_cursor_model(id) && !out.iter().any(|existing| existing == id) {
             out.push(id.to_string());
         }
     }
@@ -146,6 +137,44 @@ pub fn is_openai_chat_model(id: &str) -> bool {
 pub fn is_anthropic_chat_model(id: &str) -> bool {
     let id = id.to_ascii_lowercase();
     id.starts_with("claude-") && !id.contains("embed")
+}
+
+/// GPT-6 family only. Drops gpt-4.1 / gpt-4o / o-series / embeddings / audio.
+pub fn is_current_openai_chat_model(id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    is_openai_chat_model(&id) && id.starts_with("gpt-6")
+}
+
+/// Claude 5.x chat models only. Drops 3.x, 4.x, and embeddings.
+pub fn is_current_anthropic_chat_model(id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    if !is_anthropic_chat_model(&id) {
+        return false;
+    }
+    if id.contains("claude-3") || id.contains("-4-") || id.contains("-4.") {
+        return false;
+    }
+    id.contains("-5-") || id.contains("-5.") || id.ends_with("-5")
+}
+
+pub fn is_current_cursor_model(id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    if !is_cursor_model_id(&id) {
+        return false;
+    }
+    id == "auto"
+        || id.starts_with("composer-2.5")
+        || is_current_openai_chat_model(&id)
+        || is_current_anthropic_chat_model(&id)
+}
+
+pub fn is_current_model(kind: ProviderKind, id: &str) -> bool {
+    match kind {
+        ProviderKind::Openai => is_current_openai_chat_model(id),
+        ProviderKind::Anthropic => is_current_anthropic_chat_model(id),
+        ProviderKind::Cursor => is_current_cursor_model(id),
+        ProviderKind::Demo => id == "boltbar-demo",
+    }
 }
 
 fn is_cursor_model_id(id: &str) -> bool {
@@ -197,6 +226,7 @@ fn dated_stem(id: &str) -> String {
 }
 
 pub fn rank_models(kind: ProviderKind, mut ids: Vec<String>) -> Vec<String> {
+    ids.retain(|id| is_current_model(kind, id));
     if ids.is_empty() {
         return fallback_models(kind)
             .iter()
@@ -376,15 +406,31 @@ mod tests {
                 {"id": "whisper-1"},
                 {"id": "text-embedding-3-large"},
                 {"id": "gpt-5.2"},
+                {"id": "gpt-4.1"},
+                {"id": "gpt-4o"},
                 {"id": "dall-e-3"}
             ]
         }"#;
         let ids = parse_openai_models_json(body);
         assert!(ids.contains(&"gpt-6-astra".into()));
-        assert!(ids.contains(&"gpt-5.2".into()));
         assert!(!ids.iter().any(|id| id.contains("whisper")));
         assert!(!ids.iter().any(|id| id.contains("2026-04-30")));
+        assert!(!ids.iter().any(|id| id == "gpt-4.1" || id == "gpt-4o" || id == "gpt-5.2"));
         assert_eq!(ids[0], "gpt-6-astra");
+    }
+
+    #[test]
+    fn drops_legacy_claude_from_live_lists() {
+        let body = r#"{
+            "data": [
+                {"id": "claude-sonnet-5-5"},
+                {"id": "claude-sonnet-4-6"},
+                {"id": "claude-3-5-haiku-latest"}
+            ]
+        }"#;
+        let ids = parse_anthropic_models_json(body);
+        assert_eq!(ids.iter().filter(|id| id.contains("sonnet-5-5")).count(), 1);
+        assert!(!ids.iter().any(|id| id.contains("4-6") || id.contains("claude-3")));
     }
 
     #[test]
