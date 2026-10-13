@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-label="Boltbar overlay over a desktop">
+  <defs>
+    <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a261c"/>
+      <stop offset="1" stop-color="#0c0c0d"/>
+    </linearGradient>
+    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect width="1440" height="900" fill="url(#desk)"/>
+  <text x="72" y="110" fill="#6f6a60" font-family="SF Pro Text, Helvetica, sans-serif" font-size="28">Finder</text>
+  <rect x="360" y="210" width="720" height="430" rx="18" fill="#141416" fill-opacity="0.92" stroke="#ffffff" stroke-opacity="0.08"/>
+  <text x="384" y="242" fill="#9a958c" font-family="SF Pro Text, Helvetica, sans-serif" font-size="12" letter-spacing="2">BOLTBAR</text>
+  <text x="920" y="242" fill="#9a958c" font-family="SF Pro Text, Helvetica, sans-serif" font-size="12">OPT+SPACE · ESC HIDES</text>
+  <text x="384" y="286" fill="#9a958c" font-family="SF Pro Text, Helvetica, sans-serif" font-size="11" letter-spacing="1.4">YOU</text>
+  <text x="384" y="312" fill="#f4f1ea" font-family="SF Pro Text, Helvetica, sans-serif" font-size="16">Explain this error and suggest a fix.</text>
+  <text x="384" y="352" fill="#f5b942" font-family="SF Pro Text, Helvetica, sans-serif" font-size="11" letter-spacing="1.4">OPENAI · STREAMING</text>
+  <text x="384" y="380" fill="#ece8df" font-family="SF Pro Text, Helvetica, sans-serif" font-size="15">The panic happens because the mutex is locked across an await point.</text>
+  <rect x="384" y="400" width="672" height="92" rx="10" fill="#0d0e11" stroke="#ffffff" stroke-opacity="0.06"/>
+  <text x="400" y="428" fill="#c8d4e8" font-family="SF Mono, Menlo, monospace" font-size="13">fn hello() {</text>
+  <text x="416" y="450" fill="#c8d4e8" font-family="SF Mono, Menlo, monospace" font-size="13">println!("streaming, token by token");</text>
+  <text x="400" y="472" fill="#c8d4e8" font-family="SF Mono, Menlo, monospace" font-size="13">}</text>
+  <rect x="384" y="512" width="32" height="4" rx="2" fill="#ffffff" fill-opacity="0.15"/>
+  <rect x="372" y="528" width="696" height="72" rx="12" fill="#ffffff" fill-opacity="0.05"/>
+  <text x="388" y="570" fill="#9a958c" font-family="SF Pro Text, Helvetica, sans-serif" font-size="15">Ask anything  a new conversation starts each time this bar opens</text>
+  <rect x="372" y="612" width="70" height="22" rx="6" fill="#1b1b1d" stroke="#ffffff" stroke-opacity="0.1"/>
+  <text x="380" y="628" fill="#f4f1ea" font-family="SF Pro Text, Helvetica, sans-serif" font-size="10">OpenAI</text>
+  <rect x="450" y="612" width="64" height="22" rx="6" fill="#f5b942"/>
+  <text x="464" y="628" fill="#111" font-family="SF Pro Text, Helvetica, sans-serif" font-size="10">Send</text>
+</svg>

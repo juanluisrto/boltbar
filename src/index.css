@@ -1,0 +1,125 @@
+@import "tailwindcss";
+@import "highlight.js/styles/github-dark.min.css";
+
+:root {
+  color-scheme: dark;
+  --bg: rgba(16, 16, 18, 0.86);
+  --bg-solid: #141416;
+  --line: rgba(255, 255, 255, 0.08);
+  --gold: #f5b942;
+  --gold-dim: rgba(245, 185, 66, 0.16);
+  --text: #f4f1ea;
+  --muted: #9a958c;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+}
+
+body {
+  font-family:
+    "SF Pro Text",
+    "SF Pro Display",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Inter",
+    "Segoe UI",
+    sans-serif;
+  color: var(--text);
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+textarea {
+  font: inherit;
+}
+
+.glass {
+  background: var(--bg);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  border: 1px solid var(--line);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+}
+
+.web-preview {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #2a2418 0%, transparent 55%),
+    #0b0b0c;
+  padding: 12vh 16px 40px;
+}
+
+.markdown {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #ece8df;
+}
+
+.markdown p {
+  margin: 0 0 0.7em;
+}
+
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-weight: 600;
+  margin: 0.9em 0 0.4em;
+  letter-spacing: -0.02em;
+}
+
+.markdown code {
+  font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+
+.markdown pre {
+  margin: 0.75em 0;
+  padding: 12px 14px;
+  background: #0d0e11;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  overflow: auto;
+}
+
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.markdown a {
+  color: var(--gold);
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0.4em 0 0.8em 1.2em;
+}
+
+.markdown blockquote {
+  margin: 0.6em 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--gold);
+  color: var(--muted);
+}
+
+.hljs {
+  background: transparent !important;
+}
