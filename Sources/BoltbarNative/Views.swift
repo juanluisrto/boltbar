@@ -244,7 +244,7 @@ struct ModelPopover: View {
 
 struct MarkdownText: View {
     let source: String
-    struct Block { var text: String; var code: Bool; var language: String = "" }
+    struct Block { var text: String; var code: Bool; var language: String = ""; var table: MarkdownTable? = nil }
     static func blocks(_ source: String) -> [Block] {
         var result: [Block] = [], text = "", code = false, language = ""
         for line in source.components(separatedBy: "\n") {
@@ -254,7 +254,20 @@ struct MarkdownText: View {
             } else { text += line + "\n" }
         }
         if !text.isEmpty { result.append(Block(text: text.trimmingCharacters(in: .newlines), code: code, language: language)) }
-        return result
+        return result.flatMap { block -> [Block] in
+            guard !block.code else { return [block] }
+            let lines = block.text.components(separatedBy: "\n")
+            var blocks: [Block] = [], pending: [String] = [], index = 0
+            while index < lines.count {
+                if let parsed = MarkdownTable.parse(lines, at: index) {
+                    if !pending.isEmpty { blocks.append(Block(text: pending.joined(separator: "\n"), code: false)); pending = [] }
+                    blocks.append(Block(text: lines[index..<parsed.end].joined(separator: "\n"), code: false, table: parsed.table))
+                    index = parsed.end
+                } else { pending.append(lines[index]); index += 1 }
+            }
+            if !pending.isEmpty { blocks.append(Block(text: pending.joined(separator: "\n"), code: false)) }
+            return blocks
+        }
     }
     static func highlighted(_ source: String) -> AttributedString {
         let result = NSMutableAttributedString(string: source, attributes: [.foregroundColor: NSColor(white: 0.86, alpha: 1), .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
@@ -274,7 +287,9 @@ struct MarkdownText: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(Self.blocks(source).enumerated()), id: \.offset) { _, block in
-                if block.code {
+                if let table = block.table {
+                    MarkdownTableView(table: table)
+                } else if block.code {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text(block.language.isEmpty ? "Code" : block.language).foregroundStyle(.secondary); Spacer(); CopyIconButton(text: block.text, label: "Copy code") }.font(.system(size: 10))
                         ScrollView(.horizontal) { Text(Self.highlighted(block.text)).textSelection(.enabled).fixedSize(horizontal: true, vertical: false) }
