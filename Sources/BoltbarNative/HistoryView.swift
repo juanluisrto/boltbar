@@ -73,7 +73,17 @@ final class HistoryBrowserView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            DispatchQueue.main.async { [weak self] in guard let self else { return }; self.window?.makeFirstResponder(self.search) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.window?.makeFirstResponder(self.search)
+                Self.styleEditor(self.search)
+            }
+        }
+    }
+    static func styleEditor(_ search: NSSearchField?) {
+        if let editor = search?.currentEditor() as? NSTextView {
+            editor.insertionPointColor = .white
+            editor.selectedTextAttributes = [.backgroundColor: NSColor(white: 1, alpha: 0.18), .foregroundColor: NSColor.white]
         }
     }
 }
@@ -159,6 +169,9 @@ struct HistoryTable: NSViewRepresentable {
         weak var search: NSSearchField?
         private var restoringSelection = false
         init(parent: HistoryTable) { self.parent = parent }
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            HistoryBrowserView.styleEditor(search)
+        }
         func controlTextDidChange(_ notification: Notification) { parent.query = search?.stringValue ?? "" }
         func control(_ control: NSControl, textView: NSTextView, doCommandBy command: Selector) -> Bool {
             switch command {
