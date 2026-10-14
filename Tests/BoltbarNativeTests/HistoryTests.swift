@@ -1,7 +1,23 @@
 import XCTest
+import AppKit
 @testable import BoltbarNative
 
 final class HistoryTests: XCTestCase {
+    @MainActor func testHistoryFitsItsFirstActualViewportAndEveryResize() {
+        _ = NSApplication.shared
+        let scroll = HistoryScrollView(), table = NSTableView()
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("conversation"))
+        column.minWidth = 0; column.width = 668; table.addTableColumn(column)
+        table.columnAutoresizingStyle = .noColumnAutoresizing
+        scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        for width in [388.0, 980.0, 450.0] {
+            scroll.setFrameSize(NSSize(width: width, height: 176))
+            scroll.tile(); scroll.layoutSubtreeIfNeeded()
+            XCTAssertEqual(column.width, scroll.contentView.bounds.width, accuracy: 0.5)
+            XCTAssertEqual(table.frame.width, scroll.contentView.bounds.width, accuracy: 0.5)
+            XCTAssertEqual(scroll.contentView.bounds.origin.x, 0)
+        }
+    }
     func store() throws -> ConversationStore {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let directory = root.appendingPathComponent(".build/history-tests/\(UUID().uuidString)")
@@ -41,6 +57,59 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(loaded.effort, .high); XCTAssertEqual(loaded.model, "gpt-6.1-sol")
         let attrs = try FileManager.default.attributesOfItem(atPath: store.directory.appendingPathComponent(summary.id.uuidString + ".json").path)
         XCTAssertEqual((attrs[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+    func testSearchFindsTitlesAndBothSidesOfChatWithoutAttachmentPayloads() async throws {
+        let store = try store()
+        let first = ConversationSummary(id: UUID(), title: "Plan del viaje", createdAt: Date(), updatedAt: Date(timeIntervalSince1970: 1))
+        let second = ConversationSummary(id: UUID(), title: "Ideas para casa", createdAt: Date(), updatedAt: Date(timeIntervalSince1970: 2))
+        let attachment = try Attachment(name: "hidden.txt", mime: "text/plain", data: Data("attachment-only".utf8))
+        let messages = [Message(role: .user, text: "¿Dónde comer?", attachments: [attachment]),
+                        Message(role: .assistant, text: "Prueba el café en Córdoba.")]
+        for (summary, contents) in [(first, messages), (second, [Message(role: .user, text: "Muebles")])] {
+            let record = Conversation(summary: summary, messages: contents, provider: .openai, model: "gpt-6.1-sol", effort: .low, transport: .api)
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                store.save(record) { error in if let error { continuation.resume(throwing: error) } else { continuation.resume() } }
+            }
+        }
+        // Start with an empty cache, as after relaunching the app.
+        let reopened = try ConversationStore(directory: store.directory)
+        let title = try await reopened.search("VIAJE"), user = try await reopened.search("donde"), answer = try await reopened.search(" CAFE cordoba ")
+        XCTAssertEqual(title, [first.id]); XCTAssertEqual(user, [first.id]); XCTAssertEqual(answer, [first.id])
+        let absent = try await reopened.search("attachment-only"), empty = try await reopened.search("   ")
+        XCTAssertTrue(absent.isEmpty); XCTAssertEqual(empty, [second.id, first.id])
+        let updated = Conversation(summary: second, messages: [Message(role: .assistant, text: "Córdoba también")], provider: .openai, model: "gpt-6.1-sol", effort: .low, transport: .api)
+        reopened.save(updated) { _ in }; reopened.flush()
+        let refreshed = try await reopened.search("cordoba")
+        XCTAssertEqual(refreshed, [second.id, first.id])
+    }
+    @MainActor func testHistoryFilteringPreservesDraftAndNavigationState() async throws {
+        let store = try store(), defaults = UserDefaults(suiteName: "com.boltbar.tests.history.search")!
+        let model = ChatModel(defaults: defaults, historyStore: store, streamer: { _, update in await update(.text("Respuesta zafiro")) })
+        model.draft = "Consulta inicial"; model.send()
+        while model.streaming { await Task.yield() }
+        model.draft = "Borrador intacto"; model.webSearch = true; model.showHistory(); model.historyQuery = "ZAFIRO"
+        while model.searchingHistory { await Task.yield() }
+        XCTAssertEqual(model.filteredHistory.count, 1)
+        model.historyQuery = "nada coincide"
+        while model.searchingHistory { await Task.yield() }
+        XCTAssertTrue(model.filteredHistory.isEmpty)
+        model.historyQuery = "zafiro"; model.closeHistory()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(model.historyQuery, "zafiro")
+        XCTAssertEqual(model.draft, "Borrador intacto"); XCTAssertFalse(model.searchingHistory)
+        model.showHistory()
+        XCTAssertEqual(model.historyQuery, ""); XCTAssertEqual(model.filteredHistory.count, 1)
+        model.historyQuery = "zafiro"
+        while model.searchingHistory { await Task.yield() }
+        let opened = await model.openConversation(try XCTUnwrap(model.history.first?.id))
+        XCTAssertTrue(opened); XCTAssertTrue(model.webSearch)
+        XCTAssertTrue(model.returnToHistory())
+        while model.searchingHistory { await Task.yield() }
+        XCTAssertEqual(model.historyQuery, "zafiro"); XCTAssertEqual(model.filteredHistory.count, 1)
+        XCTAssertEqual(model.selectedHistoryID, model.history.first?.id)
+        model.reset()
+        XCTAssertEqual(model.historyQuery, ""); XCTAssertNil(model.selectedHistoryID); XCTAssertFalse(model.returnToHistory())
+        model.finish()
     }
     @MainActor func testNewChatAndRestartKeepHistoryAndResumeTheSameConversation() async throws {
         let store = try store()

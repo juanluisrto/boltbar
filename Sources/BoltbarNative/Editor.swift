@@ -29,6 +29,8 @@ final class ComposerTextView: NSTextView {
     var onSend: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onSettings: (() -> Void)?
+    var onHistory: (() -> Void)?
+    var onBackToHistory: (() -> Bool)?
     var onAttachment: ((NSPasteboard) -> Bool)?
     override func paste(_ sender: Any?) {
         if onAttachment?(.general) == true { return }
@@ -36,6 +38,11 @@ final class ComposerTextView: NSTextView {
     }
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { window?.orderOut(nil); return }
+        if string.isEmpty, !hasMarkedText(),
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            if event.keyCode == 124 { onHistory?(); return }
+            if event.keyCode == 123, onBackToHistory?() == true { return }
+        }
         if event.modifierFlags.contains(.command) {
             switch event.charactersIgnoringModifiers {
             case "n": onNewChat?(); return
@@ -84,6 +91,8 @@ struct GrowingEditor: NSViewRepresentable {
         text.delegate = context.coordinator
         text.onSend = { model.send() }; text.onAttachment = { model.receive($0) }
         text.onNewChat = { model.newConversation?() }; text.onSettings = { model.openSettings?() }
+        text.onHistory = { model.showHistory(preservingSearch: model.canReturnToHistory) }
+        text.onBackToHistory = { model.returnToHistory() }
         text.registerForDraggedTypes([.fileURL, .png, .tiff])
         text.setAccessibilityLabel("Message")
         return scroll

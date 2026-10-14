@@ -22,12 +22,14 @@ struct Conversation: Codable {
     }
 }
 
-/// Payloads are read only when selected; the list keeps a small metadata index.
+/// The list keeps a small metadata index. Full-text search lazily caches only
+/// message text on the serial queue, without decoding attachment payloads.
 /// A serial queue preserves save/load ordering without encoding images on the UI thread.
 final class ConversationStore: @unchecked Sendable {
     let directory: URL
     private let queue = DispatchQueue(label: "com.boltbar.history", qos: .utility)
     private var index: [ConversationSummary]
+    private var searchText: [UUID: String] = [:]
     var summaries: [ConversationSummary] { queue.sync { index } }
 
     static func local() throws -> ConversationStore {
@@ -51,6 +53,8 @@ final class ConversationStore: @unchecked Sendable {
                 next.append(conversation.summary); next.sort { $0.updatedAt > $1.updatedAt }
                 try self.write(next, to: self.directory.appendingPathComponent("index.json"))
                 self.index = next
+                self.searchText[conversation.summary.id] = ConversationSearch.normalize(
+                    ([conversation.summary.title] + conversation.messages.map(\.text)).joined(separator: "\n"))
                 completion(nil)
             } catch { completion(error) }
         }
@@ -63,12 +67,44 @@ final class ConversationStore: @unchecked Sendable {
             }
         }
     }
+    func search(_ query: String) async throws -> [UUID] {
+        let terms = ConversationSearch.terms(query)
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    if terms.isEmpty { continuation.resume(returning: self.index.map(\.id)); return }
+                    var matches: [UUID] = []
+                    for summary in self.index {
+                        if self.searchText[summary.id] == nil {
+                            let document = try JSONDecoder().decode(ConversationSearch.Document.self, from: Data(contentsOf: self.url(summary.id)))
+                            self.searchText[summary.id] = ConversationSearch.normalize(
+                                ([summary.title] + document.messages.map(\.text)).joined(separator: "\n"))
+                        }
+                        if ConversationSearch.matches(self.searchText[summary.id] ?? "", terms: terms) { matches.append(summary.id) }
+                    }
+                    continuation.resume(returning: matches)
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
     func flush() { queue.sync {} }
     private func url(_ id: UUID) -> URL { directory.appendingPathComponent(id.uuidString + ".json") }
     private func write<T: Encodable>(_ value: T, to url: URL) throws {
         try JSONEncoder().encode(value).write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
+}
+
+enum ConversationSearch {
+    struct Document: Decodable {
+        struct Text: Decodable { let text: String }
+        let messages: [Text]
+    }
+    static func normalize(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+    static func terms(_ query: String) -> [String] { normalize(query).split(whereSeparator: \.isWhitespace).map(String.init) }
+    static func matches(_ text: String, terms: [String]) -> Bool { terms.allSatisfy(text.contains) }
 }
 
 enum ConversationDate {

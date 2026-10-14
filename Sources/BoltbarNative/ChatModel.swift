@@ -12,6 +12,11 @@ import SwiftUI
     @Published var historyError: String?
     @Published var openingConversation = false
     @Published var showingHistory = false
+    @Published var historyQuery = "" { didSet { filterHistory() } }
+    @Published private(set) var historyMatches: [UUID]?
+    @Published private(set) var searchingHistory = false
+    @Published var selectedHistoryID: UUID?
+    @Published private(set) var canReturnToHistory = false
     @Published var manualHistoryHeight: CGFloat?
     @Published var inputHeight: CGFloat = 26
     @Published var manualInputHeight: CGFloat = 26
@@ -38,6 +43,7 @@ import SwiftUI
     private var conversationID = UUID()
     private var conversationCreated = Date()
     private var conversationDirty = false
+    private var historySearchTask: Task<Void, Never>?
 
     init(defaults: UserDefaults = .standard, historyStore: ConversationStore? = nil, streamer: @escaping Streamer = Providers.stream) {
         self.defaults = defaults
@@ -64,9 +70,43 @@ import SwiftUI
     var model: String { preferences.model(provider) }
     var canSearchWeb: Bool { provider == .openai && preferences.transport(provider) != .cli }
     var webSearchActive: Bool { webSearch && canSearchWeb }
+    var filteredHistory: [ConversationSummary] {
+        guard let historyMatches else { return history }
+        let ids = Set(historyMatches)
+        return history.filter { ids.contains($0.id) }
+    }
     var historyHeight: CGFloat { manualHistoryHeight ?? min(308, max(88, CGFloat(history.count) * 44)) }
-    func showHistory() { saveConversation(); showingHistory = true }
-    func closeHistory() { showingHistory = false }
+    func showHistory(preservingSearch: Bool = false) {
+        saveConversation()
+        if !preservingSearch { historyQuery = ""; selectedHistoryID = nil }
+        showingHistory = true; filterHistory()
+    }
+    func closeHistory() { showingHistory = false; historySearchTask?.cancel(); searchingHistory = false }
+    func returnToHistory() -> Bool {
+        guard canReturnToHistory else { return false }
+        showHistory(preservingSearch: true); return true
+    }
+    private func filterHistory() {
+        historySearchTask?.cancel()
+        guard showingHistory, !ConversationSearch.terms(historyQuery).isEmpty, let historyStore else {
+            historyMatches = nil; searchingHistory = false; return
+        }
+        let query = historyQuery
+        historyMatches = []; searchingHistory = true
+        historySearchTask = Task { [weak self] in
+            do {
+                // Coalesce fast typing before any disk work. Later keystrokes
+                // reuse a text-only cache rather than reloading attachments.
+                try await Task.sleep(nanoseconds: 60_000_000)
+                let matches = try await historyStore.search(query)
+                guard let self, !Task.isCancelled, self.showingHistory, self.historyQuery == query else { return }
+                self.historyMatches = matches; self.searchingHistory = false
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.searchingHistory = false; self.historyError = "Could not search chat history: \(error.localizedDescription)"
+            }
+        }
+    }
     func persist() { if let data = try? JSONEncoder().encode(preferences) { defaults.set(data, forKey: "preferences") } }
     func refresh() async {
         guard !refreshing else { return }; refreshing = true
@@ -98,7 +138,7 @@ import SwiftUI
         inputHeight = 26; manualInputHeight = 26; lastRequest = nil
         manualThreadHeight = nil; threadHeight = 44
         resizeOrigin = nil
-        showingHistory = false; manualHistoryHeight = nil
+        closeHistory(); historyQuery = ""; selectedHistoryID = nil; canReturnToHistory = false; manualHistoryHeight = nil
         conversationID = UUID(); conversationCreated = Date(); conversationDirty = false
     }
     func stop() {
@@ -122,6 +162,7 @@ import SwiftUI
         historyStore.save(record) { [weak self] error in
             if let error { Task { @MainActor in self?.historyError = "Could not save chat history: \(error.localizedDescription)" } }
         }
+        if showingHistory { filterHistory() }
     }
     func openConversation(_ id: UUID) async -> Bool {
         guard let historyStore, !openingConversation else { return false }
@@ -138,7 +179,8 @@ import SwiftUI
             draft = ""; attachments = []; error = nil; lastRequest = nil
             inputHeight = 26; manualInputHeight = 26; manualThreadHeight = nil; threadHeight = 44
             conversationDirty = false
-            showingHistory = false
+            selectedHistoryID = id; canReturnToHistory = true
+            closeHistory()
             return true
         } catch { historyError = "Could not open this conversation: \(error.localizedDescription)"; return false }
     }

@@ -15,17 +15,20 @@ struct HistoryPane: View {
                     Image(systemName: "square.and.pencil").font(.system(size: 15)).frame(width: 24, height: 24)
                 }.buttonStyle(.plain).help("New chat (⌘N)").accessibilityLabel("New chat")
             }
-            if model.history.isEmpty {
-                Text("Your conversations will appear here after you send a message.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).frame(height: model.historyHeight)
-            } else {
-                HistoryTable(items: model.history, open: { id in
+            ZStack {
+                HistoryTable(items: model.filteredHistory, query: $model.historyQuery, selectedID: $model.selectedHistoryID, open: { id in
                     Task { if await model.openConversation(id) { close(); model.focusComposer?() } }
                 }, close: close)
-                .frame(height: model.historyHeight)
+                .frame(height: model.historyHeight + 38)
                 .disabled(model.openingConversation)
-                Text("↑ ↓ to select · Return to open · ← to go back").font(.system(size: 10)).foregroundStyle(.secondary)
+                if model.filteredHistory.isEmpty {
+                    Text(model.searchingHistory ? "Searching…" : model.history.isEmpty
+                         ? "Your conversations will appear here after you send a message."
+                         : "No matching conversations")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 38).allowsHitTesting(false)
+                }
             }
+            Text("↑ ↓ select · → / Return open · ← back").font(.system(size: 10)).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading).preferredColorScheme(.dark)
             .onMoveCommand { if $0 == .left { close() } }
     }
@@ -34,15 +37,43 @@ struct HistoryPane: View {
 final class ConversationTableView: NSTableView {
     var activate: (() -> Void)?
     var dismiss: (() -> Void)?
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window != nil { DispatchQueue.main.async { [weak self] in guard let self else { return }; self.window?.makeFirstResponder(self) } }
-    }
+    var editSearch: ((NSEvent) -> Void)?
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 36, 76: activate?()
+        case 36, 76, 124: activate?()
         case 53, 123: dismiss?()
-        default: super.keyDown(with: event)
+        case 125, 126: super.keyDown(with: event)
+        default:
+            if let characters = event.characters, !characters.isEmpty,
+               !characters.unicodeScalars.contains(where: { (0xF700...0xF8FF).contains($0.value) }) {
+                editSearch?(event)
+            } else { super.keyDown(with: event) }
+        }
+    }
+}
+
+final class HistoryBrowserView: NSView {
+    let search = NSSearchField(), scroll = HistoryScrollView()
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        search.placeholderString = "Search all messages"
+        search.font = .systemFont(ofSize: 12); search.focusRingType = .none
+        search.sendsSearchStringImmediately = true; search.sendsWholeSearchString = false
+        search.setAccessibilityLabel("Search conversations")
+        for view in [search, scroll] { view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view) }
+        NSLayoutConstraint.activate([
+            search.topAnchor.constraint(equalTo: topAnchor), search.leadingAnchor.constraint(equalTo: leadingAnchor),
+            search.trailingAnchor.constraint(equalTo: trailingAnchor), search.heightAnchor.constraint(equalToConstant: 28),
+            scroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 10),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            DispatchQueue.main.async { [weak self] in guard let self else { return }; self.window?.makeFirstResponder(self.search) }
         }
     }
 }
@@ -55,16 +86,41 @@ final class ConversationRowView: NSTableRowView {
     }
 }
 
+/// SwiftUI supplies the scroll view's real width after makeNSView. Fit the
+/// document on every layout, including its first appearance after a resize.
+final class HistoryScrollView: NSScrollView {
+    private var fittingWidth = false
+    override func tile() { super.tile(); fitDocumentWidth() }
+    override func layout() { super.layout(); fitDocumentWidth() }
+    func fitDocumentWidth() {
+        guard !fittingWidth, let table = documentView as? NSTableView,
+              let column = table.tableColumns.first, contentView.bounds.width > 0 else { return }
+        fittingWidth = true
+        defer { fittingWidth = false }
+        let width = contentView.bounds.width
+        if abs(column.width - width) > 0.5 { column.width = width }
+        if abs(table.frame.width - width) > 0.5 { table.setFrameSize(NSSize(width: width, height: table.frame.height)) }
+        if contentView.bounds.origin.x != 0 {
+            contentView.scroll(to: NSPoint(x: 0, y: contentView.bounds.origin.y))
+            reflectScrolledClipView(contentView)
+        }
+    }
+}
+
 struct HistoryTable: NSViewRepresentable {
     let items: [ConversationSummary]
+    @Binding var query: String
+    @Binding var selectedID: UUID?
     let open: (UUID) -> Void
     let close: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> HistoryBrowserView {
+        let browser = HistoryBrowserView()
+        browser.search.stringValue = query; browser.search.delegate = context.coordinator
         let table = ConversationTableView()
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("conversation"))
-        column.width = 668; column.resizingMask = .autoresizingMask; table.addTableColumn(column)
-        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        column.minWidth = 0; table.addTableColumn(column)
+        table.columnAutoresizingStyle = .noColumnAutoresizing
         table.headerView = nil; table.rowHeight = 44; table.intercellSpacing = .zero
         table.backgroundColor = .clear; table.style = .plain; table.focusRingType = .none
         table.allowsMultipleSelection = false; table.allowsEmptySelection = false
@@ -74,28 +130,71 @@ struct HistoryTable: NSViewRepresentable {
             if let table { coordinator?.activate(row: table.selectedRow) }
         }
         table.dismiss = close; table.setAccessibilityLabel("Previous conversations")
-        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        table.editSearch = { [weak browser] event in
+            guard let browser else { return }
+            browser.window?.makeFirstResponder(browser.search)
+            browser.search.currentEditor()?.keyDown(with: event)
+        }
+        context.coordinator.table = table; context.coordinator.search = browser.search
+        let scroll = browser.scroll; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        scroll.hasHorizontalScroller = false; scroll.horizontalScrollElasticity = .none
         scroll.drawsBackground = false; scroll.documentView = table
-        context.coordinator.items = items
-        table.reloadData()
-        if !items.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
-        return scroll
+        context.coordinator.reload(items)
+        return browser
     }
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ browser: HistoryBrowserView, context: Context) {
+        let scroll = browser.scroll
         guard let table = scroll.documentView as? ConversationTableView else { return }
         context.coordinator.parent = self; table.dismiss = close
-        let ids = items.map(\.id)
+        if browser.search.stringValue != query { browser.search.stringValue = query }
         if context.coordinator.items != items {
-            let previous = context.coordinator.items
-            let selected = previous.indices.contains(table.selectedRow) ? previous[table.selectedRow].id : nil
-            context.coordinator.items = items; table.reloadData()
-            if !ids.isEmpty { table.selectRowIndexes(IndexSet(integer: selected.flatMap { ids.firstIndex(of: $0) } ?? 0), byExtendingSelection: false) }
+            context.coordinator.reload(items)
         }
+        scroll.fitDocumentWidth()
     }
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
         var parent: HistoryTable
         var items: [ConversationSummary] = []
+        weak var table: ConversationTableView?
+        weak var search: NSSearchField?
+        private var restoringSelection = false
         init(parent: HistoryTable) { self.parent = parent }
+        func controlTextDidChange(_ notification: Notification) { parent.query = search?.stringValue ?? "" }
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy command: Selector) -> Bool {
+            switch command {
+            case #selector(NSResponder.moveDown(_:)): select(delta: 1)
+            case #selector(NSResponder.moveUp(_:)): select(delta: -1)
+            case #selector(NSResponder.insertNewline(_:)): if let table { activate(row: table.selectedRow) }
+            case #selector(NSResponder.moveRight(_:)): if let table { activate(row: table.selectedRow) }
+            case #selector(NSResponder.moveLeft(_:)): parent.close()
+            case #selector(NSResponder.cancelOperation(_:)):
+                if parent.query.isEmpty { parent.close() }
+                else { search?.stringValue = ""; parent.query = "" }
+            default: return false
+            }
+            return true
+        }
+        private func select(delta: Int) {
+            guard let table, !items.isEmpty else { return }
+            let row = min(items.count - 1, max(0, table.selectedRow + delta))
+            table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            table.scrollRowToVisible(row)
+        }
+        func reload(_ items: [ConversationSummary]) {
+            guard let table else { return }
+            restoringSelection = true
+            defer { restoringSelection = false }
+            self.items = items; table.reloadData()
+            if !items.isEmpty {
+                let row = items.firstIndex { $0.id == parent.selectedID } ?? 0
+                table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                table.scrollRowToVisible(row)
+            }
+        }
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard !restoringSelection, let table, items.indices.contains(table.selectedRow) else { return }
+            parent.selectedID = items[table.selectedRow].id
+        }
         func numberOfRows(in tableView: NSTableView) -> Int { parent.items.count }
         func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { ConversationRowView() }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -121,6 +220,8 @@ struct HistoryTable: NSViewRepresentable {
         }
         @objc func openButton(_ button: NSButton) { activate(row: button.tag) }
         @objc func clicked(_ table: NSTableView) { activate(row: table.clickedRow) }
-        func activate(row: Int) { if parent.items.indices.contains(row) { parent.open(parent.items[row].id) } }
+        func activate(row: Int) {
+            if parent.items.indices.contains(row) { parent.selectedID = parent.items[row].id; parent.open(parent.items[row].id) }
+        }
     }
 }
