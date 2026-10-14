@@ -36,6 +36,12 @@ OK significa observado en este Mac; FALLA indica un defecto reproducido. PARCIAL
 | Settings separado con ⌘,; todas sus secciones accesibles | Ventana OK; FALLA al llegar a proveedores inferiores | OK, ventana separada y scroll completo | [Antes](screenshots/release-04-settings-scroll.jpg), [arriba](screenshots/native-06-settings-top.jpg), [abajo](screenshots/native-07-settings-bottom.jpg) |
 | Llavero `com.boltbar.keys`, sin keys en configuración | Escritura/lectura verificadas después de corregir Tauri | Lectura OK sin variable de entorno, tras autorización manual del propietario; escritura implementada, prueba UI nativa pendiente | [Guardado Tauri](screenshots/fixed-03-keychain.jpg), llamada nativa real y comprobación de preferencias |
 | Historial persistente, títulos, fechas y teclado | No disponible | OK: reapertura después de reiniciar, imagen conservada, clic y ↑/↓ + Return; ← vuelve al chat | [Listado](screenshots/native-23-inline-history.jpg), [selección](screenshots/native-24-history-keyboard.jpg), [reinicio](screenshots/native-19-history-after-restart.jpg), [← conserva borrador](screenshots/native-25-left-restores-draft.jpg) |
+| Selector de archivos por encima del panel flotante | — | OK: sheet asociado a Boltbar; elegir y cancelar conservan el borrador y devuelven el foco | [Selector visible](screenshots/native-26-file-picker-sheet.jpg); AX identifica una sheet |
+| Fechas tras redimensionar; filtrar al escribir | — | OK: fechas dentro del ancho real, búsqueda local de título y contenido completo; «Linux» encuentra una palabra que solo está en la respuesta | [Filtro en barra estrecha](screenshots/native-28-history-content-filter.jpg) |
+| → abre el chat seleccionado; ← vuelve al mismo filtro y selección | — | OK con teclado, también al elegir la segunda fila; → con editor vacío abre historial | [Vuelta a la segunda fila](screenshots/native-30-history-return-selection.jpg) |
+| Búsqueda web opcional y persistente | — | OK con OpenAI API real; fuentes enlazadas; On y Off sobreviven a nueva conversación y reinicio | [Respuesta con fuente](screenshots/native-27-web-search.jpg); probe en `metrics.json` |
+| Copiar respuesta y bloque de código | — | OK: pegado de vuelta verifica Markdown completo con enlaces y fences, y código sin encabezado | [Respuesta copiada](screenshots/native-29-copy-response.jpg) |
+| Tablas Markdown | NP | Fallo en Swift anterior, ahora OK en conversaciones guardadas y respuesta real: alineaciones, negrita y tabla de 10 columnas | [Tres columnas](screenshots/native-31-markdown-table.jpg), [desplazamiento hasta J/10](screenshots/native-32-markdown-table-scrolled.jpg) |
 | Modo claro y oscuro del sistema | NP | OK: panel oscuro en ambos; se restauró el modo claro original | [Claro](screenshots/native-20-system-light.jpg), [oscuro](screenshots/native-21-system-dark.jpg) |
 
 ## Fallos y cambios
@@ -56,7 +62,11 @@ Estas correcciones quedan como archivo de la investigación; la propuesta actual
 
 El selector OpenAI aplica una política explícita: las familias Astra, Sol y Luna. De cada una elige el alias estable con la versión numérica más alta que devuelve `/v1/models`; excluye snapshots fechados, previews y variantes especializadas. Actualmente ofrece `gpt-6-astra`, `gpt-6.1-sol` y `gpt-6-luna`. Refresca al arrancar, cada seis horas y bajo demanda en Settings. Conserva el último catálogo correcto si la consulta falla. La API no tiene una etiqueta de calidad "flagship": nuevas versiones dentro de estas familias entran automáticamente; una familia nueva requiere actualizar la política. Sin API y sin caché previa, CLI usa las tres opciones incluidas en la app, con ese límite indicado en Settings.
 
-Los chats y sus adjuntos se guardan en `~/Library/Application Support/Boltbar/Conversations`, con directorio 0700 y archivos 0600. La lista carga solo el índice; el contenido se lee al abrir un chat. Las keys siguen exclusivamente en el Llavero o en el entorno de arranque, sin incluirse en el historial. No hay sincronización de chats en nube. No se pueden recuperar las conversaciones de builds anteriores que solo las mantenían en memoria.
+Los chats y sus adjuntos se guardan en `~/Library/Application Support/Boltbar/Conversations`, con directorio 0700 y archivos 0600. La lista carga solo el índice. Al buscar se lee el texto en una cola de fondo y se conserva una caché en memoria, sin decodificar adjuntos ni llamar al modelo. La búsqueda ignora mayúsculas y tildes y combina los términos escritos; no busca dentro de archivos adjuntos. ← desde un chat reabierto, con el editor vacío, conserva filtro y selección. Las keys siguen exclusivamente en el Llavero o en el entorno de arranque, sin incluirse en el historial. No hay sincronización de chats en nube. No se pueden recuperar las conversaciones de builds anteriores que solo las mantenían en memoria.
+
+La búsqueda web usa `web_search` en la misma petición Responses de OpenAI. El globo recuerda la última elección incluso después de reiniciar. Está deshabilitado en otros proveedores y transportes CLI; volver a OpenAI conserva la preferencia. Con el globo apagado no se envía ninguna herramienta. No se añadió App Server, un servidor MCP ni una segunda llamada a otro modelo. Las citas se convierten en enlaces Markdown que también se conservan al copiar. La acción de copiar una respuesta está en su cabecera, se muestra al pasar el ratón o enfocar con teclado y confirma con un check; la copia se verificó por accesibilidad y pegado, sin atribuir a Computer Use una prueba fiable del movimiento de hover.
+
+Las tablas respetan encabezados, alineaciones izquierda/centro/derecha, pipes escapados y código en línea. Las columnas anchas tienen scroll horizontal. Se verificó hasta la última columna mediante la barra de desplazamiento accesible; el gesto de trackpad no se midió. El Markdown original permanece intacto al copiar.
 
 ## Rendimiento y método
 
@@ -64,7 +74,7 @@ Prompt fijo: números del 1 al 40, `gpt-6.1-sol`, esfuerzo Low, misma máquina. 
 
 | Medida | Tauri corregido | Spike Swift mínimo | App Swift |
 |---|---:|---:|---:|
-| Huella física en reposo, sin conversación ni Settings | 94,3 MiB, suma de app + GPU + WebContent + Networking | 20,9 MiB | 22,7 MiB en la build final con índice de historial (22,6 inicial; 23,3 en una build intermedia) |
+| Huella física en reposo, sin conversación ni Settings | 94,3 MiB, suma de app + GPU + WebContent + Networking | 20,9 MiB | 22,7 MiB en la build con índice de historial, antes de búsqueda y tablas (22,6 inicial; 23,3 intermedia) |
 | TTFT OpenAI, mediana de 3 | 1.595 ms | 1.533 ms | 2.065 ms |
 | Rango TTFT OpenAI | 1.316–1.717 ms | 1.482–1.754 ms | 1.317–2.092 ms |
 | Primeras 5 reaperturas, mediana del callback interno | 1,22 ms | 1,27 ms | Muestras internas en `metrics.json`; no comparables con pulsación física |
@@ -73,13 +83,15 @@ La app Swift completa usó aproximadamente un **76 % menos de huella física** q
 
 En otros transportes, una llamada nativa Claude Code tuvo TTFT 3.328 ms, 10 deltas y 5.702 ms totales. Codex CLI tuvo 6.656 ms hasta su único evento de texto y 9.218 ms totales. No son medidas del mismo modelo ni del mismo protocolo.
 
+Una prueba posterior de búsqueda real de la página oficial de Swift, `gpt-6.1-sol` Low, recibió el primer texto a los **10.401 ms** y terminó en **11.427 ms**, con 6 deltas de texto y 6 eventos de actividad de búsqueda. Es una sola muestra: buscar añade trabajo del proveedor y no tiene la misma latencia que una respuesta sin herramientas. Una prueba separada de Claude Haiku 5.5 por stdin terminó correctamente con 10 deltas (TTFT 3.292 ms). Ambas usaron las credenciales existentes, sin imprimirlas. La huella física no se volvió a medir después de estos cambios de UI.
+
 **Límite de la apertura:** los callbacks no miden pulsación física → píxeles. El de Tauri termina después de mostrar/enfocar la ventana; el de Swift incluye layout nativo. No son métricas equivalentes y no demuestran una ventaja de Swift en latencia perceptible. Computer Use no despacha de forma fiable el atajo global; la comprobación física la realizó el propietario. No se inventa un tiempo end-to-end.
 
 ## Recomendación
 
 Continuar con Swift para esta app exclusivamente macOS. La reducción de memoria observada es clara y el control directo de NSPanel, editor, menús y Llavero permite resolver los problemas concretos sin coordinar una vista web con una ventana Rust. La mejora demostrada es memoria y control visual; **las llamadas al modelo no son más rápidas por reescribir la UI**.
 
-El coste es mantener el renderizador Markdown nativo, integración de CLIs y pruebas de geometría/AppKit. No se ha medido mantenimiento a largo plazo. El spike mínimo era mucho menor que una app completa: no se extrapola su tamaño o complejidad a toda la migración. La nueva implementación no añade dependencias Swift externas, pero su resaltado es básico y no presenta tablas GFM completas.
+El coste es mantener el renderizador Markdown nativo, integración de CLIs y pruebas de geometría/AppKit. No se ha medido mantenimiento a largo plazo. El spike mínimo era mucho menor que una app completa: no se extrapola su tamaño o complejidad a toda la migración. La nueva implementación no añade dependencias Swift externas. Incluye tablas Markdown con pipes; el resaltado de código sigue siendo básico y no es un renderizador de todo GFM/HTML.
 
 ## Distribución y límites pendientes
 
@@ -91,6 +103,8 @@ No había monitor externo conectado. No quedó una prueba concluyente de cambios
 
 Fuentes primarias para la decisión de distribución y APIs: [Apple Developer ID](https://developer.apple.com/developer-id/), [notarización](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution), [NSWindow collection behavior](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/canjoinallapplications), [Homebrew Cask Cookbook](https://docs.brew.sh/Cask-Cookbook), [Codex no interactivo](https://developers.openai.com/codex/noninteractive/), [incidencia Rust/macOS 27](https://github.com/rust-lang/rust/issues/157750).
 
-Validación local: 15 tests pasan; compilación universal arm64 + x86_64 y verificación de firma local correctas. Los tests cubren propiedad histórica de adjuntos, cancelación y respuestas tardías, framing SSE Unicode/CRLF, las ocho zonas de resize, familias/versiones de modelos, fechas, guardado/restauración y conservación del borrador al entrar/salir del historial.
+Validación local: **29 tests pasan**; compilación universal arm64 + x86_64 y verificación de firma local correctas. Los tests cubren propiedad histórica de adjuntos, cancelación y respuestas tardías, framing SSE Unicode/CRLF, las ocho zonas de resize, familias/versiones de modelos, fechas, guardado/restauración, búsqueda local, selección al volver, tablas durante streaming, citas y persistencia de búsqueda web. La app instalada se verificó con Computer Use.
+
+Se atendieron además dos observaciones de revisión: se amplió el timeout API a 10 minutos sin datos / 60 minutos totales para no cortar razonamiento a los 60 segundos o una respuesta a los 3 minutos; no se simuló una llamada real de una hora. Todos los prompts CLI pasan por stdin, evitando el límite `ARG_MAX` con documentos. Un test real de proceso pasó 2 MiB por el pipe y Claude Code respondió usando esta ruta. Cursor sigue sin login para verificar su llamada completa. Referencias de entrada por stdin: [Claude Code CLI](https://code.claude.com/docs/en/cli-reference), [Cursor output format](https://cursor.com/docs/cli/reference/output-format). Referencia de búsqueda y citas: [OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search).
 
 Las capturas publicadas contienen únicamente pruebas sintéticas y configuración sin secretos. No se incluyen las conversaciones privadas que el propietario escribió mientras probaba la app.

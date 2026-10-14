@@ -13,7 +13,8 @@
     "swift_spike_clean_idle": 20.9,
     "swift_full_initial_clean_idle": 22.6,
     "swift_with_persistent_history_idle": 23.3,
-    "swift_final_with_history_index_clean_idle": 22.7
+    "swift_final_with_history_index_clean_idle": 22.7,
+    "measurement_stage_note": "The 22.7 MiB history-index sample predates full-text search and Markdown tables; no later physical-footprint sample was taken."
   },
   "tauri_openai": [
     {
@@ -264,5 +265,53 @@
     "system_light": "passed",
     "system_dark": "passed",
     "original_system_light_restored": true
+  },
+  "native_followup_qa": {
+    "web_search_probe": {
+      "completed": true,
+      "deltas": 6,
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "search_events": 6,
+      "synthetic_response": "**Title: Install Swift | Swift.org**\n\nThe official Swift download page directs users to downloads and installation instructions for Linux, macOS, and Windows. ([swift.org](https://www.swift.org/install/)) [1](<https://www.swift.org/install/>)",
+      "total_ms": 11426.598041551188,
+      "ttft_ms": 10400.744874961674
+    },
+    "claude_stdin_probe": {
+      "completed": true,
+      "deltas": 10,
+      "model": "claude-haiku-5-5",
+      "provider": "anthropic",
+      "total_ms": 5564.774791477248,
+      "ttft_ms": 3291.624833131209
+    },
+    "automated_tests_passed": 29,
+    "history": {
+      "typed_filter": true,
+      "matches_assistant_text_not_in_title": true,
+      "right_opens_selected": true,
+      "left_restores_filter_and_second_row": true,
+      "narrow_dates_visible": true
+    },
+    "clipboard": {
+      "whole_response_markdown_roundtrip": true,
+      "fenced_code_roundtrip": true,
+      "hover_movement_not_verified_by_automation": true
+    },
+    "web_preference": {
+      "on_after_relaunch": true,
+      "off_after_relaunch": true
+    },
+    "markdown_tables": {
+      "three_columns_alignment_and_bold": true,
+      "ten_columns": true,
+      "last_column_via_accessible_scrollbar": true,
+      "trackpad_gesture_tested": false
+    },
+    "attachment_picker": {
+      "parent_sheet_above_panel": true,
+      "cancel_preserves_draft_and_attachment": true,
+      "selection_restores_focus": true
+    }
   }
 }

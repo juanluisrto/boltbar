@@ -7,8 +7,9 @@ A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. The native im
 - **⌥ Space** opens a new conversation; **Esc** hides it. **⌘N** starts fresh and **⌘,** opens a separate Settings window.
 - A one-line editor grows upward to eight lines, then scrolls. Drag any border to resize one dimension, or a corner to resize both. Drag the blank top strip or toolbar background to move the bar.
 - Paste, drop or choose images, PDFs and text documents. Sent attachments stay visible in the conversation and remain available in follow-up requests.
-- A single model chip with an effort gauge, streamed replies, selectable Markdown, and highlighted fenced code.
-- Previous chats open inside the bar from the clock button beside the model chip: click a title or use ↑/↓ and Return. Escape, ← or the back arrow returns to the current chat. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
+- A single model chip with an effort gauge, streamed replies, selectable Markdown, aligned tables, and highlighted fenced code. Copy a whole response from its hover/focus icon, or a code block from its own copy icon.
+- Previous chats open inside the bar from the clock button or **→** in an empty composer. Start typing to filter titles and all message text locally; accents and case do not matter. Use ↑/↓ to select and **→** or Return to open. In a reopened chat, **←** with an empty composer returns to the same filter and selection. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
+- The globe toggles web search with OpenAI API, with clickable source citations. Boltbar remembers that choice across new chats and app restarts. Search is unavailable on CLI transports and other providers; the saved choice is retained when switching back to OpenAI.
 - OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex, Claude Code or Cursor CLI sessions.
 - API keys use macOS Keychain service `com.boltbar.keys`. Chats and attachments are saved locally in `~/Library/Application Support/Boltbar/Conversations`, with a private metadata index and a separate file per conversation. Keys are never included.
 
@@ -56,9 +57,11 @@ CLI image/PDF submissions produce an explicit error instead of silently losing f
 
 OpenAI discovery is an explicit product policy: only stable aliases in the Astra, Sol and Luna families are eligible, and the highest numeric version of each family is shown. Refresh runs at launch, every six hours, and on demand from Settings. A new family needs a policy change; future versions within these three families are automatic. API failures keep the last successful catalog. CLI-only users without a cached API catalog get the three bundled defaults; that is not a live availability guarantee.
 
-History begins with this native build; earlier in-memory conversations cannot be recovered. Stored chats include attachments and can be resumed after a restart. The history is local, not cloud-synced.
+History begins with this native build; earlier in-memory conversations cannot be recovered. Stored chats include attachments and can be resumed after a restart. Search reads message text on a background queue and caches it in memory; it does not search inside attachment files or call a model. The history is local, not cloud-synced.
 
-Markdown supports paragraphs, inline emphasis/links/code, headings, lists, quotes, and fenced code. Syntax coloring is intentionally a small native highlighter. Full GFM table layout is not implemented yet.
+Markdown supports paragraphs, inline emphasis/links/code, headings, lists, quotes, fenced code and pipe tables. Tables respect column alignment, wrap cells and scroll horizontally when too wide. Syntax coloring is intentionally a small native highlighter.
+
+Web search adds the hosted `web_search` tool to the same OpenAI Responses request; it does not start an agent server or MCP process. Search adds provider/tool latency when enabled. With the globe off, the request contains no search tool. An OpenAI API key is required even if a Codex subscription login is available.
 
 ## Architecture
 
@@ -67,7 +70,8 @@ Markdown supports paragraphs, inline emphasis/links/code, headings, lists, quote
 - `Conversations.swift`, `HistoryView.swift`: private local history, native keyboard list and friendly dates.
 - `FeaturedModels.swift`: approved OpenAI families and numeric version selection.
 - `Editor.swift`, `Views.swift`, `SettingsView.swift`: AppKit text editor and native SwiftUI views.
-- `Providers.swift`: URLSession SSE, provider catalogs, bounded CLI pipes and cancellation.
+- `Providers.swift`, `WebSearch.swift`: URLSession SSE, hosted web search and citation links, provider catalogs, CLI stdin/stdout pipes and cancellation.
+- `MarkdownTable.swift`: native Markdown table parsing, alignment and horizontal overflow.
 - `Tests/BoltbarNativeTests`: state, attachment payloads, cancellation, SSE and model-filter regression tests.
 - `native-spike/`: initial minimal comparison prototype, retained for the QA measurements.
 
@@ -83,6 +87,8 @@ BOLTBAR_QA_TRANSPORT=cli build/Boltbar.app/Contents/MacOS/Boltbar --qa-probe ant
 ```
 
 Optional file arguments are for synthetic QA fixtures only. With fixtures, the probe also prints the synthetic response so vision/document handling can be checked. Never pass private documents to a logged probe.
+
+`BOLTBAR_QA_WEB=1` changes the probe to a fixed search for Swift’s official download page and prints the synthetic response with its citations.
 
 ## License
 
