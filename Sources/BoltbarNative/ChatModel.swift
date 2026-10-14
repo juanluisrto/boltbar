@@ -205,8 +205,7 @@ import SwiftUI
     private func begin(_ request: ChatRequest) {
         error = nil; streaming = true; generation = UUID(); let current = generation
         lastRequest = request
-        let assistant = Message(role: .assistant, text: "", pending: true, author: request.provider.title,
-            activity: request.webSearch ? "Searching the web…" : nil)
+        let assistant = Message(role: .assistant, text: "", pending: true, author: request.provider.title)
         messages.append(assistant)
         saveConversation()
         let streamer = self.streamer

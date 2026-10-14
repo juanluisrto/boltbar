@@ -61,7 +61,6 @@ enum Providers {
             var body: [String: Any] = ["model": request.model, "stream": true, "reasoning": ["effort": request.effort.rawValue], "input": messages]
             if request.webSearch {
                 body["tools"] = [["type": "web_search"]]
-                body["tool_choice"] = "required"
             }
             return body
         }

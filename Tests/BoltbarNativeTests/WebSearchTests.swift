@@ -2,16 +2,26 @@ import XCTest
 @testable import BoltbarNative
 
 final class WebSearchTests: XCTestCase {
-    func testSearchIsOptInAndUsesOnlyTheHostedSearchTool() {
+    func testSearchIsOptInAndLetsTheModelDecideWhetherToUseIt() {
         var request = ChatRequest(provider: .openai, model: "gpt-6.1-sol", effort: .low, transport: .api,
             messages: [Message(role: .user, text: "Find Swift downloads")])
         let plain = Providers.body(request)
         XCTAssertNil(plain["tools"]); XCTAssertNil(plain["tool_choice"])
         request.webSearch = true
         let search = Providers.body(request)
-        XCTAssertEqual(search["tool_choice"] as? String, "required")
+        XCTAssertNil(search["tool_choice"], "Use the API default automatic tool selection, never force a search")
         XCTAssertEqual((search["tools"] as? [[String: String]])?.map { $0["type"] }, ["web_search"])
         XCTAssertEqual(search["model"] as? String, "gpt-6.1-sol")
+    }
+    func testSearchActivityOnlyStartsAfterARealSearchEvent() {
+        var stream = OpenAITextStream()
+        XCTAssertTrue(stream.consume(["type": "response.created"]).isEmpty)
+        let greeting = stream.consume(["type": "response.output_text.delta", "delta": "Hello!"])
+        guard case .text("Hello!") = greeting.first else { return XCTFail("A normal reply must not announce a search") }
+        let searching = stream.consume(["type": "response.web_search_call.in_progress"])
+        guard case .activity("Searching the web…") = searching.first else { return XCTFail("Missing search activity") }
+        let writing = stream.consume(["type": "response.web_search_call.completed"])
+        guard case .activity("Writing answer…") = writing.first else { return XCTFail("Missing completion activity") }
     }
     func testCitationLinksPreserveUnicodeClaimsAndGroupSharedMarkers() {
         let text = "🦀 Café. citeturn0search0"
@@ -59,6 +69,7 @@ final class WebSearchTests: XCTestCase {
         })
         model.preferences.provider = .openai; model.preferences.transports["openai"] = .api
         model.webSearch = true; model.draft = "Search"; model.send()
+        XCTAssertNil(model.messages.last?.activity, "Enabling web access is not evidence that a search has started")
         await fulfillment(of: [started], timeout: 2)
         XCTAssertEqual(model.messages.last?.activity, "Searching the web…")
         model.reset(); await late?(.replaceText("late source")); await late?(.activity("late activity"))
