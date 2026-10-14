@@ -1,0 +1,1 @@
+Documento sintético de QA. La palabra de control es ZAFIRO.

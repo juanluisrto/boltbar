@@ -1,0 +1,100 @@
+import Foundation
+
+enum StreamUpdate {
+    case text(String)
+    case replaceText(String)
+    case activity(String)
+}
+
+/// Convert provider citation annotations into portable, clickable Markdown.
+/// Offsets are Unicode scalar positions, not Swift's grapheme-cluster count.
+enum WebCitations {
+    static func markdown(_ text: String, annotations: [[String: Any]]) -> String {
+        let scalars = Array(text.unicodeScalars)
+        var links: [String] = [], edits: [Int: (start: Int, labels: [String])] = [:]
+        var fallback: [String] = []
+        for annotation in annotations {
+            guard annotation["type"] as? String == "url_citation",
+                  let rawURL = annotation["url"] as? String, let url = URL(string: rawURL),
+                  ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { continue }
+            let address = url.absoluteString.replacingOccurrences(of: ">", with: "%3E").replacingOccurrences(of: "<", with: "%3C")
+            if !links.contains(address) { links.append(address) }
+            let label = "[\(links.firstIndex(of: address)! + 1)](<\(address)>)"
+            guard let start = annotation["start_index"] as? Int, let end = annotation["end_index"] as? Int,
+                  start >= 0, end >= start, end <= scalars.count else {
+                if !fallback.contains(label) { fallback.append(label) }; continue
+            }
+            let span = String(String.UnicodeScalarView(scalars[start..<end]))
+            // Some annotations cover a citation marker, others cover the claim.
+            // Only replace markers; preserve the actual words of the answer.
+            let marker = span.hasPrefix("cite") && span.hasSuffix("")
+            let insertionStart = marker ? start : end
+            var edit = edits[end] ?? (insertionStart, [])
+            edit.start = min(edit.start, insertionStart)
+            if !edit.labels.contains(label) { edit.labels.append(label) }
+            edits[end] = edit
+        }
+        var result = scalars
+        var boundary = scalars.count
+        for end in edits.keys.sorted(by: >) {
+            let edit = edits[end]!
+            guard end <= boundary else {
+                fallback.append(contentsOf: edit.labels.filter { !fallback.contains($0) }); continue
+            }
+            let prefix = edit.start == end && end > 0 && scalars[end - 1] != " " ? " " : ""
+            result.replaceSubrange(edit.start..<end, with: (prefix + edit.labels.joined(separator: " ")).unicodeScalars)
+            boundary = edit.start
+        }
+        var rendered = String(String.UnicodeScalarView(result))
+        if !fallback.isEmpty { rendered += "\n\nSources: " + fallback.joined(separator: " ") }
+        return rendered
+    }
+}
+
+/// Keep raw text separate from rendered citations so later annotation offsets
+/// stay correct while text is streaming, including multiple output items.
+struct OpenAITextStream {
+    struct Part {
+        var text = ""
+        var annotations: [Int: [String: Any]] = [:]
+        var rendered: String { WebCitations.markdown(text, annotations: annotations.keys.sorted().compactMap { annotations[$0] }) }
+    }
+    struct Position: Hashable, Comparable {
+        let output: Int, content: Int
+        static func < (lhs: Self, rhs: Self) -> Bool { (lhs.output, lhs.content) < (rhs.output, rhs.content) }
+    }
+    private var parts: [Position: Part] = [:]
+    private var rendered: String { parts.keys.sorted().compactMap { parts[$0]?.rendered }.joined(separator: "\n\n") }
+
+    mutating func consume(_ event: [String: Any]) -> [StreamUpdate] {
+        let position = Position(output: event["output_index"] as? Int ?? 0, content: event["content_index"] as? Int ?? 0)
+        switch event["type"] as? String {
+        case "response.output_text.delta":
+            guard let text = event["delta"] as? String else { return [] }
+            parts[position, default: Part()].text += text
+            return [.text(text)]
+        case "response.output_text.annotation.added":
+            guard let annotation = event["annotation"] as? [String: Any] else { return [] }
+            let index = event["annotation_index"] as? Int ?? parts[position, default: Part()].annotations.count
+            parts[position, default: Part()].annotations[index] = annotation
+            return [.replaceText(rendered)]
+        case "response.output_text.done":
+            if let text = event["text"] as? String { parts[position, default: Part()].text = text }
+            return [.replaceText(rendered)]
+        case "response.web_search_call.in_progress", "response.web_search_call.searching":
+            return [.activity("Searching the web…")]
+        case "response.web_search_call.completed":
+            return [.activity("Writing answer…")]
+        case "response.completed":
+            guard let response = event["response"] as? [String: Any], let output = response["output"] as? [[String: Any]] else { return [] }
+            let texts = output.flatMap { item -> [String] in
+                (item["content"] as? [[String: Any]] ?? []).compactMap { part in
+                    guard part["type"] as? String == "output_text", let text = part["text"] as? String else { return nil }
+                    return WebCitations.markdown(text, annotations: part["annotations"] as? [[String: Any]] ?? [])
+                }
+            }
+            return texts.isEmpty ? [] : [.replaceText(texts.joined(separator: "\n\n"))]
+        default: return []
+        }
+    }
+}

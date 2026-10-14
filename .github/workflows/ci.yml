@@ -1,81 +1,25 @@
-name: CI
-
+name: Native macOS
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
-  test:
-    name: Linux tests and typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - name: Rust tests
-        run: cargo test -p boltbar-core
-      - name: Frontend install
-        run: npm ci
-      - name: Frontend tests
-        run: npm test
-      - name: Frontend typecheck and build
-        run: npm run build
-
-  macos:
-    name: Universal macOS app
+  native:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - name: Install frontend
-        run: npm ci
-      - name: Build universal Boltbar.app
-        run: npm run tauri -- build --target universal-apple-darwin
-      - name: Package
-        run: |
-          set -euo pipefail
-          APP="target/universal-apple-darwin/release/bundle/macos/Boltbar.app"
-          if [ ! -d "$APP" ]; then
-            echo "Boltbar.app not found at $APP"
-            find target -iname '*.app' -o -iname '*.dmg' | head -n 50
-            exit 1
-          fi
-          VERSION="$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')"
-          mkdir -p dist-macos
-          ditto -c -k --keepParent "$APP" "dist-macos/Boltbar-${VERSION}-universal.zip"
-          if [ -f "target/universal-apple-darwin/release/bundle/dmg/Boltbar_${VERSION}_universal.dmg" ]; then
-            cp "target/universal-apple-darwin/release/bundle/dmg/Boltbar_${VERSION}_universal.dmg" dist-macos/
-          fi
-          ls -lah dist-macos
+      - name: Test native state, attachments, streaming and rendering
+        run: swift test
+      - name: Build universal macOS app
+        env:
+          BOLTBAR_UNIVERSAL: "1"
+        run: sh scripts/build-native.sh
+      - name: Package review artifact
+        run: ditto -c -k --keepParent build/Boltbar.app build/Boltbar-native-universal.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: boltbar-macos-universal
-          path: dist-macos/*
-
-  release:
-    name: Attach macOS zip to GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, macos]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: boltbar-macos-universal
-          path: dist-macos
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist-macos/*
+          name: boltbar-native-universal
+          path: build/Boltbar-native-universal.zip

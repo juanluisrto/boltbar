@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="panel" x2="0" y2="1">
+      <stop stop-color="#353638"/>
+      <stop offset="1" stop-color="#17181b"/>
+    </linearGradient>
+    <linearGradient id="bolt" x2="0" y2="1">
+      <stop stop-color="#ffdc89"/>
+      <stop offset="1" stop-color="#f4ad39"/>
+    </linearGradient>
+  </defs>
+  <rect x="72" y="72" width="880" height="880" rx="198" fill="url(#panel)" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M562 216 304 548Q296 560 312 560H474L430 798 724 450Q734 438 716 438H550L600 230Q604 212 586 212H574Q567 212 562 216Z" fill="url(#bolt)"/>
+</svg>

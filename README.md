@@ -1,114 +1,108 @@
-# Boltbar
+# Boltbar — native macOS
 
-A lightning-fast global chat bar for macOS. Press **Opt+Space** (configurable) and a Spotlight-style overlay appears over whatever you are doing. Every summon starts a new conversation.
+A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. Starting with v0.2.0, the native implementation replaces the Tauri/React runtime. macOS 13 or newer.
 
-Boltbar is the open-source stand-in for the ChatGPT desktop “Chat Bar” that used to open with Opt+Space and was later removed.
+![Compact native bar](docs/qa/screenshots/native-22-gauge-chip.jpg)
 
-![Boltbar overlay](docs/screenshots/chat-bar.svg)
-
-_Placeholder visual of the floating bar. Replace this SVG with a real screenshot from a Mac after the first signed build._
-
-## Why Tauri v2 (Rust)
-
-This is a **resident menu-bar app**, not a page that cold-starts on every hotkey.
-
-- The **Rust** side owns global shortcuts, the Keychain, provider streaming, and official-CLI fallbacks. That work stays off the UI thread.
-- The window is created once, kept hidden, and shown on Opt+Space. That is how you get a Spotlight-like feel without a full native widget toolkit.
-- The webview exists only to render **streaming markdown and fenced code**. Native Rust GUIs (egui/iced) still make that painful. A tiny React + Tailwind surface is the tradeoff.
-- A shared `boltbar-core` crate is unit-tested on Linux. The Tauri shell is macOS-first.
-
-A fully native AppKit app would start a few milliseconds faster and look slightly more “system.” It would also make markdown, syntax highlighting, and attachments much worse. Tauri v2 is the honest middle.
-
-## Features
-
-- Global hotkey (default `alt+space`) shows a frameless, always-on-top bar
-- New conversation on every summon
-- Token-by-token streaming with GitHub-flavored markdown and highlighted code
-- Two-level composer: a text box that grows **upward** as you type (then scrolls), plus a compact control row
-- Drag the handle above the composer to resize the input
-- Image thumbnails and document cards (with a remove ✕) when you paste, drop, or attach files
-- Quick **Thinking effort** + model chip (Low / Medium / High, mapped to each provider’s reasoning param)
-- Live model lists from OpenAI `/v1/models`, Anthropic `/v1/models`, and `agent --list-models`, with October 2026 fallbacks
-- Dedicated **Settings** window (⌘, / menu-bar extra) for API keys, auth, and defaults — not in the composer
-- Pluggable providers: **OpenAI**, **Anthropic**, **Cursor**, plus a built-in **Demo**
-- API keys in the **macOS Keychain** (`service = com.boltbar.keys`) — never in `settings.json`
-- Menu-bar extra to show, hide, open Settings, or quit
+- **⌥ Space** opens a new conversation; **Esc** hides it. **⌘N** starts fresh and **⌘,** opens a separate Settings window.
+- A one-line editor grows upward to eight lines, then scrolls. Drag any border to resize one dimension, or a corner to resize both. Drag the blank top strip or toolbar background to move the bar.
+- Paste, drop or choose images, PDFs and text documents. Sent attachments stay visible in the conversation and remain available in follow-up requests.
+- A single model chip with an effort gauge, streamed replies, selectable Markdown, aligned tables, and highlighted fenced code. Copy a whole response from its hover/focus icon, or a code block from its own copy icon.
+- Previous chats open inside the bar from the clock button or **→** in an empty composer. Start typing to filter titles and all message text locally; accents and case do not matter. Use ↑/↓ to select and **→** or Return to open. In a reopened chat, **←** with an empty composer returns to the same filter and selection. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
+- The globe allows web search with OpenAI API; the model decides when a search is needed and returns clickable source citations. Boltbar remembers that choice across new chats and app restarts. Search is unavailable on CLI transports and other providers; the saved choice is retained when switching back to OpenAI.
+- OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex, Claude Code or Cursor CLI sessions.
+- API keys use macOS Keychain service `com.boltbar.keys`. Chats and attachments are saved locally in `~/Library/Application Support/Boltbar/Conversations`, with a private metadata index and a separate file per conversation. Keys are never included.
 
 ## Install
 
-After a GitHub Release exists (CI builds a universal `Boltbar-*-universal.zip`):
+Download the universal ZIP or DMG from [v0.2.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.2.0), or run:
 
-```bash
+```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
 ```
 
-From a clone, on a Mac with Xcode CLT, Rust, and Node:
+The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
 
-```bash
-chmod +x install.sh
-./install.sh
+**v0.2.0 is ad hoc signed and is not notarized.** macOS Gatekeeper may block the first launch of a downloaded copy. Only if you trust the download, use macOS System Settings → Privacy & Security → Open Anyway. The installer does not remove quarantine or disable Gatekeeper. You can also build from source below.
+
+The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
+
+## Build and test
+
+Install Xcode or its command-line tools, then:
+
+```sh
+swift test
+sh scripts/build-native.sh
+open build/Boltbar.app
 ```
 
-Homebrew (after you publish a tap or fill in `homebrew/Casks/boltbar.rb`):
+No Node, Rust, WebKit or third-party Swift dependencies are needed. Quit older Boltbar builds before launching this one so they do not compete for the global shortcut.
 
-```bash
-brew install --cask boltbar
+A universal app containing Apple Silicon and Intel code:
+
+```sh
+BOLTBAR_UNIVERSAL=1 sh scripts/build-native.sh
 ```
 
-The first launch may require **Accessibility** permission so the global hotkey can fire while other apps are focused. Grant it under System Settings → Privacy & Security → Accessibility.
+The default build uses an ad hoc signature. For local development, supply an existing signing identity with `BOLTBAR_SIGN_IDENTITY`. Public distribution needs a **Developer ID Application** certificate and notarization; an Apple Development signature is not a substitute.
 
-## Usage
+From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-1. Launch **Boltbar**. It lives in the menu bar and does not stay in the Dock.
-2. Press **Opt+Space**. Type. Enter sends; Shift+Enter inserts a newline; Esc hides.
-3. Drag the thin handle to grow or shrink the input. The box also grows upward as you type.
-4. Drop, paste, or attach files. Thumbnails appear above the text; click ✕ to remove. Images go to vision-capable models; text files are inlined.
-5. Use the compact chip to change thinking effort and model. Open **Settings** with **⌘,** (or the menu-bar extra) to save API keys and defaults.
+`sh scripts/package-release.sh` builds the universal app and creates a ZIP, DMG and `SHA256SUMS` under `build/releases/v0.2.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
-The Demo provider works with no login so you can confirm the overlay, streaming, and markdown.
+## Credentials and providers
 
-## Provider setup — what actually works
+Open Settings to choose the provider, default model, effort, transport and shortcut. Save API keys in Keychain. If an older executable created the saved key, use **Allow access to saved key** and approve the macOS prompt. Failed unattended access is reported without silently waiting behind the floating panel.
 
-Be skeptical of “just reuse my ChatGPT/Claude/Cursor subscription” claims. Here is the real matrix.
+An explicit `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the launching environment takes precedence; normal Finder launches use Keychain. The app never writes those environment credentials to a file.
 
-| Provider | API key in Keychain | Env var | Official CLI login | Notes |
-|---|---|---|---|---|
-| **OpenAI** | Yes, `api.openai.com` Chat Completions | `OPENAI_API_KEY` | Codex CLI `~/.codex/auth.json` | **API key path is first-class and official.** If Codex stored an API key, Boltbar reuses it. If Codex is logged into ChatGPT, Boltbar prefers `codex exec --json` so Codex itself refreshes tokens. A last-resort unofficial call to `chatgpt.com/backend-api/codex/responses` exists; it is **not** a documented third-party API and may break. Boltbar will not refresh ChatGPT tokens itself. |
-| **Anthropic** | Yes, Messages API | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code Keychain / `~/.claude/.credentials.json`, or `claude -p` | **API key path is official.** Claude Code OAuth against `api.anthropic.com` with `anthropic-beta: oauth-2025-04-20` is the same contract Claude Code uses. Boltbar **reads** those tokens and **does not refresh** them (Claude refresh tokens are single-use; writing them back can log Claude Code out). If the token is stale, run `claude` once or use `claude setup-token`. |
-| **Cursor** | Only with a custom OpenAI-compatible base URL | `CURSOR_API_KEY` | `agent` / `cursor-agent` CLI (`agent -p --output-format stream-json --stream-partial-output`) | **There is no public Cursor chat-completions API.** Cloud Agents (`api.cursor.com/agents`) is a repo-agent product, not a chat bar. Subscription reuse works when the official Cursor CLI is installed and logged in. A dashboard API key alone is not enough unless you point Settings at an OpenAI-compatible proxy. `~/.config/cursor/auth.json` is detected so we can tell you why chat still will not start. |
-| **Demo** | Not needed | — | — | Always available. Streams a canned markdown reply. |
+For subscription login, run the command shown in Settings (`codex login`, `claude auth login`, or `agent login`), choose **CLI login**, and refresh. Boltbar lets the official CLI manage its tokens.
 
-Priority for credentials: Keychain API key → environment variable → official CLI auth/binary → (OpenAI only) unofficial ChatGPT Responses call.
+| Transport | Streaming | Attachments | Model discovery |
+|---|---|---|---|
+| OpenAI API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, latest Astra/Sol/Luna |
+| Anthropic API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, filtered |
+| Claude Code CLI | Partial message events | UTF-8 text | Explicit fallback catalog |
+| Codex CLI | Completed message events | UTF-8 text | Last synced API catalog or bundled defaults |
+| Cursor CLI | CLI partial output | UTF-8 text | `agent --list-models` |
 
-## Develop
+CLI image/PDF submissions produce an explicit error instead of silently losing files. CLI executables can maintain their own state according to their own settings. Cursor requires an authenticated official CLI; a dashboard key is not a public chat API.
 
-```bash
-# Rust provider/auth tests (Linux and macOS)
-cargo test -p boltbar-core
+OpenAI discovery is an explicit product policy: only stable aliases in the Astra, Sol and Luna families are eligible, and the highest numeric version of each family is shown. Refresh runs at launch, every six hours, and on demand from Settings. A new family needs a policy change; future versions within these three families are automatic. API failures keep the last successful catalog. CLI-only users without a cached API catalog get the three bundled defaults; that is not a live availability guarantee.
 
-# Frontend unit tests + typecheck
-npm install
-npm test
-npm run build
+History begins with this native build; earlier in-memory conversations cannot be recovered. Stored chats include attachments and can be resumed after a restart. Search reads message text on a background queue and caches it in memory; it does not search inside attachment files or call a model. A missing or damaged chat file does not block other results; its indexed title remains searchable and opening it reports the error. The history is local, not cloud-synced.
 
-# Overlay UI in a browser (no Keychain, Demo provider)
-npm run dev:web
+Markdown supports paragraphs, inline emphasis/links/code, headings, lists, quotes, fenced code and pipe tables. Tables respect column alignment, wrap cells and scroll horizontally when too wide. Syntax coloring is intentionally a small native highlighter.
 
-# Full macOS app
-npm run tauri -- dev
-```
-
-`npm run dev:web` is a preview of the overlay. Global hotkey, Keychain, and CLI reuse need the Tauri build on a Mac.
+Web search adds the hosted `web_search` tool to the same OpenAI Responses request; it does not start an agent server or MCP process. With the globe on, [automatic tool selection](https://developers.openai.com/api/docs/guides/tools#usage-in-the-api) lets the model answer directly or search when needed. The searching indicator only appears after an actual provider search event. A search adds provider/tool latency when invoked. With the globe off, the request contains no search tool. An OpenAI API key is required even if a Codex subscription login is available.
 
 ## Architecture
 
-```
-crates/boltbar-core   providers, SSE, CLI NDJSON, auth parsers, Keychain trait
-src-tauri             Tauri v2 window, tray, Opt+Space, commands
-src                   React overlay: composer, markdown, attachments, settings
+- `Sources/BoltbarNative/Application.swift`: NSPanel, Carbon shortcut, menu-bar item, window lifecycle.
+- `ChatModel.swift` and `Domain.swift`: conversation state, persistent attachment ownership, preferences, Keychain.
+- `Conversations.swift`, `HistoryView.swift`: private local history, native keyboard list and friendly dates.
+- `FeaturedModels.swift`: approved OpenAI families and numeric version selection.
+- `Editor.swift`, `Views.swift`, `SettingsView.swift`: AppKit text editor and native SwiftUI views.
+- `Providers.swift`, `WebSearch.swift`: URLSession SSE, hosted web search and citation links, provider catalogs, CLI stdin/stdout pipes and cancellation.
+- `MarkdownTable.swift`: native Markdown table parsing, alignment and horizontal overflow.
+- `Tests/BoltbarNativeTests`: state, attachment payloads, cancellation, SSE and model-filter regression tests.
+- `native-spike/`: initial minimal comparison prototype, retained for the QA measurements.
+
+The `mac-qa` branch preserves the Tauri investigation and fixes. See [the QA report](docs/qa/REPORT.md) for evidence, measurements and remaining limits. CI builds test artifacts only; it does not publish releases.
+
+## Reproduce a transport measurement
+
+The opt-in probe uses the same provider implementation as the UI and emits only timing/count metadata for its fixed numeric prompt:
+
+```sh
+build/Boltbar.app/Contents/MacOS/Boltbar --qa-probe openai gpt-6.1-sol
+BOLTBAR_QA_TRANSPORT=cli build/Boltbar.app/Contents/MacOS/Boltbar --qa-probe anthropic claude-sonnet-5-5
 ```
 
-Release CI (`.github/workflows/ci.yml`) runs Linux tests and, on `macos-latest`, `tauri build --target universal-apple-darwin`. Tag a version (for example `v0.1.3`) to attach the zip to a GitHub Release.
+Optional file arguments are for synthetic QA fixtures only. With fixtures, the probe also prints the synthetic response so vision/document handling can be checked. Never pass private documents to a logged probe.
+
+`BOLTBAR_QA_WEB=1` changes the probe to a fixed search for Swift’s official download page and prints the synthetic response with its citations.
 
 ## License
 
