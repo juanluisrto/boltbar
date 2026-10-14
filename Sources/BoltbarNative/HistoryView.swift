@@ -11,7 +11,9 @@ struct HistoryPane: View {
                     .buttonStyle(.plain).accessibilityLabel("Back to chat")
                 Text("Previous chats").font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Button("New chat") { close(); model.newConversation?() }.buttonStyle(.borderless)
+                Button { close(); model.newConversation?() } label: {
+                    Image(systemName: "square.and.pencil").font(.system(size: 15)).frame(width: 24, height: 24)
+                }.buttonStyle(.plain).help("New chat (⌘N)").accessibilityLabel("New chat")
             }
             if model.history.isEmpty {
                 Text("Your conversations will appear here after you send a message.")
@@ -22,9 +24,10 @@ struct HistoryPane: View {
                 }, close: close)
                 .frame(height: model.historyHeight)
                 .disabled(model.openingConversation)
-                Text("↑ ↓ to select · Return to open").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("↑ ↓ to select · Return to open · ← to go back").font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }.frame(maxWidth: .infinity, alignment: .leading).preferredColorScheme(.dark)
+            .onMoveCommand { if $0 == .left { close() } }
     }
 }
 
@@ -38,7 +41,7 @@ final class ConversationTableView: NSTableView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 36, 76: activate?()
-        case 53: dismiss?()
+        case 53, 123: dismiss?()
         default: super.keyDown(with: event)
         }
     }
