@@ -327,5 +327,13 @@
     "source_url": "https://www.swift.org/install/",
     "greeting_ui": "hello received a direct answer with web access enabled",
     "tests_passed": 31
+  },
+  "native_release_installer_fixture": {
+    "version": "0.2.0",
+    "valid_checksum_installs_and_signature_verifies": true,
+    "invalid_checksum_leaves_existing_app_unchanged": true,
+    "repeat_install_preserves_valid_backup": true,
+    "zip_root_app_selected_instead_of_appledouble_metadata": true,
+    "scope": "isolated directory within repository; real public download tested after publication"
   }
 }

@@ -72,9 +72,10 @@ if [ -n "$REPO" ]; then
     awk -v name="$NAME" '$2 == name { print }' "$TMP/SHA256SUMS" > "$TMP/verify.sha256"
     [ -s "$TMP/verify.sha256" ] || die "the release checksum does not include $NAME"
     (cd "$TMP" && shasum -a 256 -c verify.sha256) || die "release checksum verification failed"
-    unzip -q "$TMP/$NAME" -d "$TMP/out"
-    APP=$(find "$TMP/out" -name 'Boltbar.app' -type d | head -n 1)
-    [ -n "$APP" ] || die "the release zip did not contain Boltbar.app"
+    ditto -x -k "$TMP/$NAME" "$TMP/out"
+    APP="$TMP/out/Boltbar.app"
+    [ -f "$APP/Contents/Info.plist" ] && [ -x "$APP/Contents/MacOS/Boltbar" ] || die "the release zip did not contain a complete Boltbar.app"
+    codesign --verify --deep --strict "$APP" || die "the release app signature is invalid"
     install_app "$APP"
     exit 0
   fi
