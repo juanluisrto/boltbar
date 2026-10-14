@@ -15,12 +15,14 @@ final class ChatPanel: NSPanel {
     var status: NSStatusItem!
     var hotkey: EventHotKeyRef?
     var hotkeyHandler: EventHandlerRef?
+    private var catalogTimer: Timer?
     private var lastPanelSize = NSSize(width: 700, height: 107)
     private var bottomAnchor: CGFloat?
     private var adjustingAnchor = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        model.enableLocalHistory()
         makeMenu()
         panel = ChatPanel(contentRect: NSRect(x: 0, y: 0, width: 700, height: 107), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Boltbar"; panel.delegate = self
@@ -35,6 +37,7 @@ final class ChatPanel: NSPanel {
         model.resize = { [weak self] in self?.fit($0) }
         model.openSettings = { [weak self] in self?.showSettings() }
         model.newConversation = { [weak self] in self?.show() }
+        model.focusComposer = { [weak self] in self?.focusComposer() }
         model.updateShortcut = { [weak self] key, modifiers, label in
             guard let self, self.register(key, modifiers) else { return false }
             self.model.preferences.shortcutKey = key; self.model.preferences.shortcutModifiers = modifiers; self.model.preferences.shortcutLabel = label
@@ -52,6 +55,9 @@ final class ChatPanel: NSPanel {
             model.error = "The global shortcut is in use. Quit the other Boltbar version or choose another shortcut in Settings."
         }
         Task { await model.refresh() }
+        catalogTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.model.refresh() }
+        }
     }
     private func makeMenu() {
         let root = NSMenu()
@@ -102,11 +108,14 @@ final class ChatPanel: NSPanel {
         if let screen { panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2)) }
         panel.makeKeyAndOrderFront(nil); panel.orderFrontRegardless()
         panel.contentView?.layoutSubtreeIfNeeded()
+        focusComposer(); panel.displayIfNeeded()
+        metric(["kind": "show_layout", "ms": (ProcessInfo.processInfo.systemUptime - start) * 1000])
+    }
+    private func focusComposer() {
         func focus(_ view: NSView) {
             if let text = view as? ComposerTextView { panel.makeFirstResponder(text) } else { view.subviews.forEach(focus) }
         }
-        if let view = panel.contentView { focus(view) }; panel.displayIfNeeded()
-        metric(["kind": "show_layout", "ms": (ProcessInfo.processInfo.systemUptime - start) * 1000])
+        if let view = panel.contentView { focus(view) }
     }
     func windowDidMove(_ notification: Notification) {
         guard let panel else { return }
@@ -147,7 +156,7 @@ final class ChatPanel: NSPanel {
         settings?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
-    func applicationWillTerminate(_ notification: Notification) { model.stop(); if let hotkey { UnregisterEventHotKey(hotkey) } }
+    func applicationWillTerminate(_ notification: Notification) { model.finish(); catalogTimer?.invalidate(); if let hotkey { UnregisterEventHotKey(hotkey) } }
 }
 
 @main struct BoltbarApplication {

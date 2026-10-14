@@ -61,7 +61,9 @@ struct SettingsView: View {
             ForEach(Provider.allCases) { ProviderSettings(model: model, provider: $0) }
             Section {
                 Button(model.refreshing ? "Refreshing…" : "Refresh logins and models") { Task { await model.refresh() } }.disabled(model.refreshing)
-                Text("Keys: macOS Keychain, service com.boltbar.keys. Conversations and attachments stay in memory. They are sent only to the selected provider when you press Send.")
+                Text("Keys: macOS Keychain, service com.boltbar.keys. Chats and attachments are saved locally in Application Support/Boltbar/Conversations and sent to the selected provider when you press Send.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("OpenAI shows the latest stable Astra, Sol and Luna available in your API catalog. It syncs at launch and every six hours; offline or CLI-only sessions use the last synced catalog or bundled defaults.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("API transports stream text fragments and support images/PDFs. CLI transports accept text documents; Codex exec currently returns complete message events.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

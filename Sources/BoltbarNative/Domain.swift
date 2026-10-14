@@ -9,7 +9,7 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
     var title: String { ["openai": "OpenAI", "anthropic": "Anthropic", "cursor": "Cursor"][rawValue]! }
     var defaults: [String] {
         switch self {
-        case .openai: return ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol"]
+        case .openai: return FeaturedModels.fallback
         case .anthropic: return ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1", "claude-haiku-5-5"]
         case .cursor: return ["auto", "composer-2.5", "composer-2.5-fast"]
         }
@@ -21,7 +21,7 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
         let id = model.lowercased()
         if ["audio", "realtime", "embed", "transcrib", "tts", "image", "search", "moderation"].contains(where: id.contains) { return false }
         switch self {
-        case .openai: return id.hasPrefix("gpt-5") || id.hasPrefix("gpt-6")
+        case .openai: return FeaturedModels.parts(id) != nil
         case .anthropic: return id.hasPrefix("claude-") && !id.hasPrefix("claude-3")
         case .cursor: return !id.contains("gpt-4") && !id.contains("claude-3")
         }
@@ -42,11 +42,11 @@ struct Preferences: Codable {
     var shortcutKey: UInt32 = 49
     var shortcutModifiers: UInt32 = 2048 // Carbon optionKey
     var shortcutLabel = "⌥ Space"
-    func model(_ provider: Provider) -> String { models[provider.rawValue] ?? provider.defaults[0] }
+    func model(_ provider: Provider) -> String { models[provider.rawValue] ?? (provider == .openai ? "gpt-6.1-sol" : provider.defaults[0]) }
     func transport(_ provider: Provider) -> Transport { transports[provider.rawValue] ?? .automatic }
 }
 
-struct Attachment: Identifiable {
+struct Attachment: Identifiable, Codable {
     let id: UUID
     let name: String
     let mime: String
@@ -74,9 +74,9 @@ struct Attachment: Identifiable {
     }
 }
 
-struct Message: Identifiable {
-    enum Role: String { case user, assistant }
-    let id = UUID()
+struct Message: Identifiable, Codable {
+    enum Role: String, Codable { case user, assistant }
+    var id = UUID()
     let role: Role
     var text: String
     var attachments: [Attachment] = []
@@ -133,6 +133,7 @@ enum Keychain {
 }
 
 func modelTitle(_ id: String) -> String {
+    if let parts = FeaturedModels.parts(id) { return "GPT-\(parts.version.map(String.init).joined(separator: ".")) \(parts.family.capitalized)" }
     let known = ["gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6-astra": "GPT-6 Astra", "gpt-6-luna": "GPT-6 Luna", "gpt-6-sol": "GPT-6 Sol",
         "claude-sonnet-5-5": "Claude Sonnet 5.5", "claude-opus-5-5": "Claude Opus 5.5", "claude-fable-5-1": "Claude Fable 5.1", "claude-haiku-5-5": "Claude Haiku 5.5", "auto": "Auto"]
     return known[id] ?? id

@@ -71,6 +71,7 @@ struct MessageRow: View {
 struct ChatBar: View {
     @ObservedObject var model: ChatModel
     @State private var showModels = false
+    @State private var showHistory = false
     var body: some View {
         VStack(spacing: 10) {
             PanelMoveArea().frame(height: 12)
@@ -104,17 +105,27 @@ struct ChatBar: View {
                     Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
                 }
             }
+            if let error = model.historyError {
+                Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 9) {
                 Button { model.pickFiles() } label: { Image(systemName: "plus").font(.system(size: 16, weight: .medium)).frame(width: 30, height: 30).background(.white.opacity(0.07), in: Circle()) }
                     .buttonStyle(.plain).accessibilityLabel("Attach files")
                 Button { showModels.toggle() } label: {
-                    HStack(spacing: 6) { Text("\(model.preferences.effort.title) · \(modelTitle(model.model))").lineLimit(1); Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)) }
+                    HStack(spacing: 6) {
+                        Text(model.preferences.effort.title).frame(width: 47, alignment: .leading)
+                        Text("·").foregroundStyle(.secondary)
+                        Text(modelTitle(model.model)).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium))
+                    }
                         .font(.system(size: 12, weight: .medium)).padding(.horizontal, 11).frame(height: 29).background(.white.opacity(0.07), in: Capsule())
                 }.buttonStyle(.plain).accessibilityLabel("Effort and model")
                     .popover(isPresented: $showModels, arrowEdge: .top) { ModelPopover(model: model, close: { showModels = false }) }
                 PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
-                Button { model.openSettings?() } label: { Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.secondary) }
-                    .buttonStyle(.plain).help("Settings (⌘,)").accessibilityLabel("Settings")
+                Button { model.saveConversation(); showHistory.toggle() } label: {
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 14)).foregroundStyle(.secondary).frame(width: 30, height: 30)
+                }.buttonStyle(.plain).help("Previous chats").accessibilityLabel("Previous chats")
+                    .popover(isPresented: $showHistory, arrowEdge: .top) { HistoryPopover(model: model, close: { showHistory = false }) }
                 Button { if model.streaming { model.stop() } else { model.send() } } label: {
                     Image(systemName: model.streaming ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold))
                         .frame(width: 31, height: 31).background(accent, in: Circle()).foregroundStyle(.black)
@@ -137,7 +148,7 @@ struct ModelPopover: View {
     var effort: Binding<Double> { Binding(get: { Double(Effort.allCases.firstIndex(of: model.preferences.effort) ?? 0) }, set: { model.preferences.effort = Effort.allCases[min(2, max(0, Int($0.rounded())))] }) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("Thinking effort"); Spacer(); Text(model.preferences.effort.title).foregroundStyle(.secondary) }.font(.system(size: 12, weight: .medium))
+            HStack { Text("Thinking effort"); Spacer(); Text(model.preferences.effort.title).frame(width: 52, alignment: .trailing).foregroundStyle(.secondary) }.font(.system(size: 12, weight: .medium))
             Slider(value: effort, in: 0...2, step: 1).tint(accent).accessibilityLabel("Thinking effort")
             HStack { Text("Low"); Spacer(); Text("Medium"); Spacer(); Text("High") }.font(.system(size: 10)).foregroundStyle(.secondary)
             Divider()

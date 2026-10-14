@@ -7,7 +7,10 @@ import SwiftUI
     @Published var catalogs: [Provider: Catalog] = [:]
     @Published var draft = ""
     @Published var attachments: [Attachment] = []
-    @Published var messages: [Message] = []
+    @Published var messages: [Message] = [] { didSet { conversationDirty = true } }
+    @Published var history: [ConversationSummary] = []
+    @Published var historyError: String?
+    @Published var openingConversation = false
     @Published var inputHeight: CGFloat = 26
     @Published var manualInputHeight: CGFloat = 26
     @Published var panelWidth: CGFloat = 700
@@ -19,6 +22,7 @@ import SwiftUI
     var resize: ((NSSize) -> Void)?
     var openSettings: (() -> Void)?
     var newConversation: (() -> Void)?
+    var focusComposer: (() -> Void)?
     var resizeOrigin: NSPoint?
     var updateShortcut: ((UInt32, UInt32, String) -> Bool)?
     private var generation = UUID()
@@ -26,15 +30,30 @@ import SwiftUI
     private var lastRequest: ChatRequest?
     private let defaults: UserDefaults
     private let streamer: Streamer
+    private var historyStore: ConversationStore?
+    private var conversationID = UUID()
+    private var conversationCreated = Date()
+    private var conversationDirty = false
 
-    init(defaults: UserDefaults = .standard, streamer: @escaping Streamer = Providers.stream) {
+    init(defaults: UserDefaults = .standard, historyStore: ConversationStore? = nil, streamer: @escaping Streamer = Providers.stream) {
         self.defaults = defaults
+        self.historyStore = historyStore
+        self.history = historyStore?.summaries ?? []
         self.streamer = streamer
         preferences = defaults.data(forKey: "preferences").flatMap { try? JSONDecoder().decode(Preferences.self, from: $0) } ?? Preferences()
         for provider in Provider.allCases {
             if !provider.accepts(preferences.model(provider)) { preferences.models[provider.rawValue] = provider.defaults[0] }
-            catalogs[provider] = Catalog(models: provider.defaults, detail: "Checking login…", ready: false)
+            let cached = defaults.stringArray(forKey: "catalog.\(provider.rawValue)")
+            let models = provider == .openai ? FeaturedModels.latest(cached ?? provider.defaults) : cached ?? provider.defaults
+            catalogs[provider] = Catalog(models: models, detail: "Checking login…", ready: false)
+            if !models.contains(preferences.model(provider)), let replacement = replacementModel(preferences.model(provider), in: models) {
+                preferences.models[provider.rawValue] = replacement
+            }
         }
+    }
+    func enableLocalHistory() {
+        do { historyStore = try .local(); history = historyStore?.summaries ?? [] }
+        catch { historyError = "Could not open local chat history: \(error.localizedDescription)" }
     }
     var provider: Provider { preferences.provider }
     var model: String { preferences.model(provider) }
@@ -46,9 +65,16 @@ import SwiftUI
             for provider in Provider.allCases {
                 group.addTask { (provider, await Providers.catalog(provider, transport: transports[provider.rawValue] ?? .automatic)) }
             }
-            for await (provider, catalog) in group {
+            for await (provider, received) in group {
+                guard preferences.transport(provider) == (transports[provider.rawValue] ?? .automatic) else { continue }
+                var catalog = received
+                if catalog.live { defaults.set(catalog.models, forKey: "catalog.\(provider.rawValue)") }
+                else if let cached = defaults.stringArray(forKey: "catalog.\(provider.rawValue)") {
+                    catalog.models = provider == .openai ? FeaturedModels.latest(cached) : cached
+                    catalog.detail = catalog.detail.replacingOccurrences(of: "fallback catalog", with: "cached catalog").replacingOccurrences(of: "Fallback catalog.", with: "Using the last synced catalog.")
+                }
                 catalogs[provider] = catalog
-                if catalog.ready, !catalog.models.contains(preferences.model(provider)), let first = catalog.models.first {
+                if !catalog.models.contains(preferences.model(provider)), let first = replacementModel(preferences.model(provider), in: catalog.models) {
                     preferences.models[provider.rawValue] = first
                 }
             }
@@ -56,16 +82,55 @@ import SwiftUI
         refreshing = false
     }
     func reset() {
+        stop()
         generation = UUID(); task?.cancel(); task = nil
         draft = ""; attachments = []; messages = []; streaming = false; error = nil
         inputHeight = 26; manualInputHeight = 26; lastRequest = nil
         manualThreadHeight = nil; threadHeight = 44
         resizeOrigin = nil
+        conversationID = UUID(); conversationCreated = Date(); conversationDirty = false
     }
     func stop() {
         generation = UUID(); task?.cancel(); task = nil; streaming = false
-        for index in messages.indices { messages[index].pending = false }
+        for index in messages.indices where messages[index].pending { messages[index].pending = false }
+        saveConversation()
     }
+    private func replacementModel(_ requested: String, in models: [String]) -> String? {
+        if let family = FeaturedModels.parts(requested)?.family,
+           let sameFamily = models.first(where: { FeaturedModels.parts($0)?.family == family }) { return sameFamily }
+        return models.first
+    }
+    func saveConversation() {
+        guard conversationDirty, messages.contains(where: { $0.role == .user }), let historyStore else { return }
+        let summary = ConversationSummary(id: conversationID, title: Conversation.title(for: messages), createdAt: conversationCreated, updatedAt: Date())
+        var savedMessages = messages
+        for index in savedMessages.indices { savedMessages[index].pending = false }
+        let record = Conversation(summary: summary, messages: savedMessages, provider: provider, model: model, effort: preferences.effort, transport: preferences.transport(provider))
+        history.removeAll { $0.id == summary.id }; history.insert(summary, at: 0)
+        conversationDirty = false
+        historyStore.save(record) { [weak self] error in
+            if let error { Task { @MainActor in self?.historyError = "Could not save chat history: \(error.localizedDescription)" } }
+        }
+    }
+    func openConversation(_ id: UUID) async -> Bool {
+        guard let historyStore, !openingConversation else { return false }
+        stop(); let current = generation; openingConversation = true
+        defer { openingConversation = false }
+        do {
+            let record = try await historyStore.load(id)
+            guard generation == current else { return false }
+            messages = record.messages; conversationID = record.summary.id; conversationCreated = record.summary.createdAt
+            preferences.provider = record.provider; preferences.effort = record.effort
+            let available = catalogs[record.provider]?.models ?? record.provider.defaults
+            preferences.models[record.provider.rawValue] = available.contains(record.model) ? record.model : replacementModel(record.model, in: available)
+            preferences.transports[record.provider.rawValue] = record.transport
+            draft = ""; attachments = []; error = nil; lastRequest = nil
+            inputHeight = 26; manualInputHeight = 26; manualThreadHeight = nil; threadHeight = 44
+            conversationDirty = false
+            return true
+        } catch { historyError = "Could not open this conversation: \(error.localizedDescription)"; return false }
+    }
+    func finish() { stop(); historyStore?.flush() }
     func send() {
         guard !streaming else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -88,6 +153,7 @@ import SwiftUI
         lastRequest = request
         let assistant = Message(role: .assistant, text: "", pending: true, author: request.provider.title)
         messages.append(assistant)
+        saveConversation()
         let streamer = self.streamer
         task = Task { [weak self] in
             let start = ProcessInfo.processInfo.systemUptime
@@ -107,6 +173,7 @@ import SwiftUI
             if let self, self.generation == current {
                 self.streaming = false
                 if let index = self.messages.firstIndex(where: { $0.id == assistant.id }) { self.messages[index].pending = false }
+                self.saveConversation()
             }
         }
     }

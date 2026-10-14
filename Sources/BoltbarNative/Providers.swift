@@ -4,6 +4,7 @@ struct Catalog {
     var models: [String]
     var detail: String
     var ready: Bool
+    var live = false
 }
 
 /// SSE framing preserves blank lines and partial UTF-8 sequences. Foundation's
@@ -127,12 +128,13 @@ enum Providers {
                 guard (reply as? HTTPURLResponse)?.statusCode == 200 else { throw AppError("Model catalog unavailable; check API access.") }
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let rows = json?["data"] as? [[String: Any]] ?? []
-                let ids = Array(Set(rows.compactMap { $0["id"] as? String }.filter(provider.accepts))).sorted {
+                let available = Array(Set(rows.compactMap { $0["id"] as? String }.filter(provider.accepts)))
+                let ids = provider == .openai ? FeaturedModels.latest(available) : available.sorted {
                     let left = provider.defaults.firstIndex(of: $0) ?? 999, right = provider.defaults.firstIndex(of: $1) ?? 999
                     return left == right ? $0 < $1 : left < right
                 }
                 guard !ids.isEmpty else { throw AppError("No supported chat models returned by the provider.") }
-                return Catalog(models: ids, detail: "API · live catalog", ready: true)
+                return Catalog(models: ids, detail: provider == .openai ? "API · latest Astra, Sol and Luna · synced live" : "API · live catalog", ready: true, live: true)
             }
             guard transport != .api else { throw AppError("Add an API key in Settings.") }
             let program = try CLI.program(provider)
