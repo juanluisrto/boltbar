@@ -95,7 +95,9 @@ enum Providers {
         }
         http.httpBody = try JSONSerialization.data(withJSONObject: body(request))
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 60; config.timeoutIntervalForResource = 180
+        // Reasoning/search can stay silent before producing text. Keep Stop
+        // available without imposing a three-minute cap on a healthy stream.
+        config.timeoutIntervalForRequest = 600; config.timeoutIntervalForResource = 3600
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
         let (bytes, response) = try await session.bytes(for: http)
@@ -249,8 +251,8 @@ enum CLI {
             return try await group.next()!
         }
     }
-    static func stream(_ request: ChatRequest, delta: @escaping (String) async -> Void) async throws {
-        let program = try program(request.provider)
+    struct Invocation { let arguments: [String]; let input: Data }
+    static func invocation(_ request: ChatRequest) throws -> Invocation {
         var prompt = "Answer as a chat assistant. Do not use tools or inspect local files.\n\n"
         for message in request.messages {
             prompt += "\(message.role.rawValue): \(message.text)\n"
@@ -264,11 +266,15 @@ enum CLI {
         case .openai:
             args = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "--disable", "shell_tool", "--disable", "apps", "-c", "model_reasoning_effort=\"\(request.effort.rawValue)\"", "-m", request.model, "-"]
         case .anthropic:
-            args = ["-p", "--verbose", "--include-partial-messages", "--output-format", "stream-json", "--model", request.model, "--effort", request.effort.rawValue, "--tools", "", "--", prompt]
+            args = ["-p", "--verbose", "--include-partial-messages", "--output-format", "stream-json", "--model", request.model, "--effort", request.effort.rawValue, "--tools", ""]
         case .cursor:
-            args = ["-p", "--output-format", "stream-json", "--stream-partial-output", "--mode", "ask", "--model", request.model, prompt]
+            args = ["-p", "--output-format", "stream-json", "--stream-partial-output", "--mode", "ask", "--model", request.model]
         }
-        let child = try LineProcess(program: program, args: args, stdin: request.provider == .openai ? Data(prompt.utf8) : nil)
+        return Invocation(arguments: args, input: Data(prompt.utf8))
+    }
+    static func stream(_ request: ChatRequest, delta: @escaping (String) async -> Void) async throws {
+        let invocation = try invocation(request)
+        let child = try LineProcess(program: program(request.provider), args: invocation.arguments, stdin: invocation.input)
         defer { child.cancel() }
         var partial = false, emitted = false
         for try await line in child.lines {
