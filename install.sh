@@ -61,11 +61,18 @@ if [ -n "$REPO" ]; then
   fi
   ASSET=$(printf '%s\n' "$JSON" | sed -n 's/.*"browser_download_url": "\([^"]*Boltbar-[^"]*universal\.zip\)".*/\1/p' | head -n 1)
   if [ -n "$ASSET" ]; then
+    CHECKSUM_ASSET=$(printf '%s\n' "$JSON" | sed -n 's/.*"browser_download_url": "\([^"]*\/SHA256SUMS\)".*/\1/p' | head -n 1)
+    [ -n "$CHECKSUM_ASSET" ] || die "the latest release is missing SHA256SUMS"
     TMP=$(mktemp -d)
     trap 'rm -rf "$TMP"' EXIT
+    NAME=${ASSET##*/}
     say "downloading $ASSET"
-    curl -fL "$ASSET" -o "$TMP/boltbar.zip"
-    unzip -q "$TMP/boltbar.zip" -d "$TMP/out"
+    curl -fL "$ASSET" -o "$TMP/$NAME"
+    curl -fsSL "$CHECKSUM_ASSET" -o "$TMP/SHA256SUMS"
+    awk -v name="$NAME" '$2 == name { print }' "$TMP/SHA256SUMS" > "$TMP/verify.sha256"
+    [ -s "$TMP/verify.sha256" ] || die "the release checksum does not include $NAME"
+    (cd "$TMP" && shasum -a 256 -c verify.sha256) || die "release checksum verification failed"
+    unzip -q "$TMP/$NAME" -d "$TMP/out"
     APP=$(find "$TMP/out" -name 'Boltbar.app' -type d | head -n 1)
     [ -n "$APP" ] || die "the release zip did not contain Boltbar.app"
     install_app "$APP"
@@ -74,4 +81,4 @@ if [ -n "$REPO" ]; then
   say "no published universal zip yet; falling back to a source build if possible"
 fi
 
-die "No published app found. Clone the Swift branch and run sh scripts/build-native.sh."
+die "No published app found. Clone the repository and run sh scripts/build-native.sh."

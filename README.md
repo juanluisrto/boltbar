@@ -1,6 +1,6 @@
 # Boltbar — native macOS
 
-A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. The native implementation replaces the Tauri/React runtime on this branch. macOS 13 or newer.
+A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. Starting with v0.2.0, the native implementation replaces the Tauri/React runtime. macOS 13 or newer.
 
 ![Compact native bar](docs/qa/screenshots/native-22-gauge-chip.jpg)
 
@@ -9,9 +9,23 @@ A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. The native im
 - Paste, drop or choose images, PDFs and text documents. Sent attachments stay visible in the conversation and remain available in follow-up requests.
 - A single model chip with an effort gauge, streamed replies, selectable Markdown, aligned tables, and highlighted fenced code. Copy a whole response from its hover/focus icon, or a code block from its own copy icon.
 - Previous chats open inside the bar from the clock button or **→** in an empty composer. Start typing to filter titles and all message text locally; accents and case do not matter. Use ↑/↓ to select and **→** or Return to open. In a reopened chat, **←** with an empty composer returns to the same filter and selection. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
-- The globe toggles web search with OpenAI API, with clickable source citations. Boltbar remembers that choice across new chats and app restarts. Search is unavailable on CLI transports and other providers; the saved choice is retained when switching back to OpenAI.
+- The globe allows web search with OpenAI API; the model decides when a search is needed and returns clickable source citations. Boltbar remembers that choice across new chats and app restarts. Search is unavailable on CLI transports and other providers; the saved choice is retained when switching back to OpenAI.
 - OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex, Claude Code or Cursor CLI sessions.
 - API keys use macOS Keychain service `com.boltbar.keys`. Chats and attachments are saved locally in `~/Library/Application Support/Boltbar/Conversations`, with a private metadata index and a separate file per conversation. Keys are never included.
+
+## Install
+
+Download the universal ZIP or DMG from [v0.2.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.2.0), or run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
+```
+
+The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
+
+**v0.2.0 is ad hoc signed and is not notarized.** macOS Gatekeeper may block the first launch of a downloaded copy. Only if you trust the download, use macOS System Settings → Privacy & Security → Open Anyway. The installer does not remove quarantine or disable Gatekeeper. You can also build from source below.
+
+The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
 
 ## Build and test
 
@@ -35,7 +49,7 @@ The default build uses an ad hoc signature. For local development, supply an exi
 
 From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-**The published v0.1.3 release and its Homebrew cask still contain Tauri.** No native release has been published. The remote one-line installer downloads that published release until a native release is approved.
+`sh scripts/package-release.sh` builds the universal app and creates a ZIP, DMG and `SHA256SUMS` under `build/releases/v0.2.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
 ## Credentials and providers
 
@@ -57,11 +71,11 @@ CLI image/PDF submissions produce an explicit error instead of silently losing f
 
 OpenAI discovery is an explicit product policy: only stable aliases in the Astra, Sol and Luna families are eligible, and the highest numeric version of each family is shown. Refresh runs at launch, every six hours, and on demand from Settings. A new family needs a policy change; future versions within these three families are automatic. API failures keep the last successful catalog. CLI-only users without a cached API catalog get the three bundled defaults; that is not a live availability guarantee.
 
-History begins with this native build; earlier in-memory conversations cannot be recovered. Stored chats include attachments and can be resumed after a restart. Search reads message text on a background queue and caches it in memory; it does not search inside attachment files or call a model. The history is local, not cloud-synced.
+History begins with this native build; earlier in-memory conversations cannot be recovered. Stored chats include attachments and can be resumed after a restart. Search reads message text on a background queue and caches it in memory; it does not search inside attachment files or call a model. A missing or damaged chat file does not block other results; its indexed title remains searchable and opening it reports the error. The history is local, not cloud-synced.
 
 Markdown supports paragraphs, inline emphasis/links/code, headings, lists, quotes, fenced code and pipe tables. Tables respect column alignment, wrap cells and scroll horizontally when too wide. Syntax coloring is intentionally a small native highlighter.
 
-Web search adds the hosted `web_search` tool to the same OpenAI Responses request; it does not start an agent server or MCP process. Search adds provider/tool latency when enabled. With the globe off, the request contains no search tool. An OpenAI API key is required even if a Codex subscription login is available.
+Web search adds the hosted `web_search` tool to the same OpenAI Responses request; it does not start an agent server or MCP process. With the globe on, [automatic tool selection](https://developers.openai.com/api/docs/guides/tools#usage-in-the-api) lets the model answer directly or search when needed. The searching indicator only appears after an actual provider search event. A search adds provider/tool latency when invoked. With the globe off, the request contains no search tool. An OpenAI API key is required even if a Codex subscription login is available.
 
 ## Architecture
 

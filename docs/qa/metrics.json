@@ -313,5 +313,19 @@
       "cancel_preserves_draft_and_attachment": true,
       "selection_restores_focus": true
     }
+  },
+  "native_auto_search_release_probe": {
+    "completed": true,
+    "model": "gpt-6.1-sol",
+    "provider": "openai",
+    "deltas": 8,
+    "search_events": 6,
+    "ttft_ms": 9271.740874974057,
+    "total_ms": 10136.631875066087,
+    "tool_choice": "API default automatic",
+    "prompt": "Search the web for the official Swift download page. Give its title and one sentence describing it, with a source citation.",
+    "source_url": "https://www.swift.org/install/",
+    "greeting_ui": "hello received a direct answer with web access enabled",
+    "tests_passed": 31
   }
 }
