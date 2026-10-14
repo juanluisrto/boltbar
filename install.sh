@@ -31,9 +31,20 @@ install_app() {
   dest="$PREFIX/Boltbar.app"
   say "installing to $dest"
   mkdir -p "$PREFIX"
-  rm -rf "$dest"
-  cp -R "$src" "$dest"
-  xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
+  stage=$(mktemp -d "$PREFIX/.boltbar-install.XXXXXX")
+  cp -R "$src" "$stage/Boltbar.app"
+  if [ -e "$dest" ]; then
+    backup="$PREFIX/Boltbar.backup.$(date +%Y%m%d-%H%M%S).app"
+    [ ! -e "$backup" ] || die "backup already exists: $backup"
+    mv "$dest" "$backup"
+    say "previous installation preserved at $backup"
+  fi
+  mv "$stage/Boltbar.app" "$dest"
+  rmdir "$stage"
+  if ! spctl --assess --type execute "$dest" >/dev/null 2>&1; then
+    say "this build is not notarized. macOS may require Open Anyway in Privacy & Security."
+    say "quarantine has been preserved; install only if you trust this source."
+  fi
   say "installed. Launch Boltbar from $dest, then press Opt+Space."
 }
 
@@ -64,7 +75,7 @@ if [ -f "./src-tauri/tauri.conf.json" ] && [ -f "./package.json" ]; then
   command -v cargo >/dev/null 2>&1 || die "Rust/cargo is required to build from source"
   command -v npm >/dev/null 2>&1 || die "npm is required to build from source"
   say "building Boltbar from this checkout (universal if both Apple targets are installed)"
-  npm install
+  npm ci
   if rustup target list --installed 2>/dev/null | grep -q 'aarch64-apple-darwin' \
     && rustup target list --installed 2>/dev/null | grep -q 'x86_64-apple-darwin'; then
     npm run tauri -- build --target universal-apple-darwin
