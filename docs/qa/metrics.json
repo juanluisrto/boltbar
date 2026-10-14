@@ -1,0 +1,268 @@
+{
+  "date": "2026-10-14",
+  "hardware": "MacBook Pro M1 Pro, macOS 27.0 (26A428), built-in display",
+  "memory": {
+    "unit": "physical footprint MiB (sample), not RSS",
+    "tauri_clean_idle": {
+      "main": 27.4,
+      "gpu": 16.4,
+      "web_content": 43.3,
+      "networking": 7.171875,
+      "sum": 94.271875
+    },
+    "swift_spike_clean_idle": 20.9,
+    "swift_full_initial_clean_idle": 22.6,
+    "swift_with_persistent_history_idle": 23.3,
+    "swift_final_with_history_index_clean_idle": 22.7
+  },
+  "tauri_openai": [
+    {
+      "completed": true,
+      "deltas": 79,
+      "provider": "openai",
+      "total_ms": 2363,
+      "ttft_ms": 1316
+    },
+    {
+      "completed": true,
+      "deltas": 79,
+      "provider": "openai",
+      "total_ms": 2882,
+      "ttft_ms": 1717
+    },
+    {
+      "completed": true,
+      "deltas": 79,
+      "provider": "openai",
+      "total_ms": 2804,
+      "ttft_ms": 1595
+    }
+  ],
+  "swift_spike_openai": [
+    {
+      "deltas": 79,
+      "kind": "stream",
+      "total_ms": 2873.834291473031,
+      "ttft_ms": 1753.5142914857715
+    },
+    {
+      "deltas": 79,
+      "kind": "stream",
+      "total_ms": 2612.2323332820088,
+      "ttft_ms": 1532.934833317995
+    },
+    {
+      "deltas": 79,
+      "kind": "stream",
+      "total_ms": 2695.7349583972245,
+      "ttft_ms": 1481.738500064239
+    }
+  ],
+  "swift_full_transport_probes": [
+    {
+      "case": "openai-1",
+      "completed": true,
+      "deltas": 79,
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "total_ms": 3457.110916497186,
+      "ttft_ms": 2064.5229164510965
+    },
+    {
+      "case": "openai-2",
+      "completed": true,
+      "deltas": 79,
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "total_ms": 3471.890416694805,
+      "ttft_ms": 2091.5884166024625
+    },
+    {
+      "case": "openai-3",
+      "completed": true,
+      "deltas": 79,
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "total_ms": 2680.672041606158,
+      "ttft_ms": 1317.4718748778105
+    },
+    {
+      "case": "vision",
+      "completed": true,
+      "control_word_found": true,
+      "deltas": 27,
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "total_ms": 2811.2979168072343,
+      "ttft_ms": 1814.5727918017656
+    },
+    {
+      "case": "claude-cli",
+      "completed": true,
+      "deltas": 10,
+      "model": "claude-sonnet-5-5",
+      "provider": "anthropic",
+      "total_ms": 5702.001208206639,
+      "ttft_ms": 3327.730208169669
+    },
+    {
+      "case": "codex-cli",
+      "completed": true,
+      "deltas": 1,
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "total_ms": 9217.588625149801,
+      "ttft_ms": 6656.452625058591
+    }
+  ],
+  "internal_reopen_callbacks_ms": {
+    "caveat": "Not physical keydown-to-pixels. Tauri show/focus calls differ from Swift layout/display work.",
+    "tauri_first5_warm": [
+      8.910291,
+      1.217833,
+      5.366917,
+      1.209708,
+      1.223166
+    ],
+    "swift_spike_first5_warm": [
+      2.2713334765285254,
+      2.3127084132283926,
+      1.1296668089926243,
+      1.1528749018907547,
+      1.2707917485386133
+    ],
+    "swift_full_samples": [
+      28.171374928206205,
+      19.280750071629882,
+      4.029583418741822
+    ],
+    "swift_final_samples": [
+      52.87291668355465,
+      9.372416650876403
+    ]
+  },
+  "keychain_without_environment": [
+    {
+      "completed": true,
+      "deltas": 79,
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "total_ms": 12318.385791731998,
+      "ttft_ms": 10932.677416596562
+    }
+  ],
+  "manual_confirmations": [
+    "Corrected Tauri: physical Option-Space opens empty chat",
+    "Native Swift: Escape hides; physical Option-Space opens empty chat"
+  ],
+  "native_eight_borders_ui": [
+    {
+      "edge": "right",
+      "before": [
+        1400,
+        224
+      ],
+      "after": [
+        1460,
+        224
+      ]
+    },
+    {
+      "edge": "left",
+      "before": [
+        1460,
+        224
+      ],
+      "after": [
+        1520,
+        224
+      ]
+    },
+    {
+      "edge": "bottom",
+      "before": [
+        1520,
+        224
+      ],
+      "after": [
+        1520,
+        284
+      ]
+    },
+    {
+      "edge": "top",
+      "before": [
+        1520,
+        284
+      ],
+      "after": [
+        1520,
+        344
+      ]
+    },
+    {
+      "edge": "topLeft",
+      "before": [
+        1520,
+        344
+      ],
+      "after": [
+        1560,
+        384
+      ]
+    },
+    {
+      "edge": "topRight",
+      "before": [
+        1560,
+        384
+      ],
+      "after": [
+        1600,
+        424
+      ]
+    },
+    {
+      "edge": "bottomRight",
+      "before": [
+        1600,
+        424
+      ],
+      "after": [
+        1640,
+        464
+      ]
+    },
+    {
+      "edge": "bottomLeft",
+      "before": [
+        1640,
+        464
+      ],
+      "after": [
+        1680,
+        504
+      ]
+    }
+  ],
+  "native_history_verification": {
+    "restart_retains_image": true,
+    "arrow_keys_and_return": true,
+    "click_opens": true,
+    "friendly_dates_unit_tested": [
+      "HH:mm",
+      "Yesterday",
+      "Sept 13",
+      "Sept 13, 2025"
+    ],
+    "tests_passed": 15,
+    "left_arrow_preserves_draft": true,
+    "compose_icon_starts_empty_chat": true,
+    "presentation": "Inline panel, neutral gray selection, right-aligned dates"
+  },
+  "appearance": {
+    "system_light": "passed",
+    "system_dark": "passed",
+    "original_system_light_restored": true
+  }
+}
