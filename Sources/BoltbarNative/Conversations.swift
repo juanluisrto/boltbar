@@ -71,19 +71,28 @@ final class ConversationStore: @unchecked Sendable {
         let terms = ConversationSearch.terms(query)
         return try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                do {
-                    if terms.isEmpty { continuation.resume(returning: self.index.map(\.id)); return }
-                    var matches: [UUID] = []
-                    for summary in self.index {
-                        if self.searchText[summary.id] == nil {
+                if terms.isEmpty { continuation.resume(returning: self.index.map(\.id)); return }
+                var matches: [UUID] = []
+                for summary in self.index {
+                    if self.searchText[summary.id] == nil {
+                        do {
                             let document = try JSONDecoder().decode(ConversationSearch.Document.self, from: Data(contentsOf: self.url(summary.id)))
                             self.searchText[summary.id] = ConversationSearch.normalize(
                                 ([summary.title] + document.messages.map(\.text)).joined(separator: "\n"))
+                        } catch {
+                            // A missing or damaged chat must not hide healthy results.
+                            // Keep its indexed title searchable, but don't cache failure:
+                            // a later query can pick up a restored file. Opening the chat
+                            // still reports the original read/decode error.
+                            if ConversationSearch.matches(ConversationSearch.normalize(summary.title), terms: terms) {
+                                matches.append(summary.id)
+                            }
+                            continue
                         }
-                        if ConversationSearch.matches(self.searchText[summary.id] ?? "", terms: terms) { matches.append(summary.id) }
                     }
-                    continuation.resume(returning: matches)
-                } catch { continuation.resume(throwing: error) }
+                    if ConversationSearch.matches(self.searchText[summary.id] ?? "", terms: terms) { matches.append(summary.id) }
+                }
+                continuation.resume(returning: matches)
             }
         }
     }

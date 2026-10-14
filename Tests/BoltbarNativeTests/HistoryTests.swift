@@ -82,6 +82,34 @@ final class HistoryTests: XCTestCase {
         let refreshed = try await reopened.search("cordoba")
         XCTAssertEqual(refreshed, [second.id, first.id])
     }
+    func testSearchSurvivesMissingAndDamagedChatsAndRetriesRestoredFiles() async throws {
+        let store = try store()
+        let healthy = ConversationSummary(id: UUID(), title: "Healthy chat", createdAt: Date(), updatedAt: Date(timeIntervalSince1970: 1))
+        let missing = ConversationSummary(id: UUID(), title: "Missing chat", createdAt: Date(), updatedAt: Date(timeIntervalSince1970: 2))
+        let damaged = ConversationSummary(id: UUID(), title: "Damaged chat", createdAt: Date(), updatedAt: Date(timeIntervalSince1970: 3))
+        for summary in [healthy, missing, damaged] {
+            let record = Conversation(summary: summary, messages: [Message(role: .assistant, text: "Zafiro")],
+                                      provider: .openai, model: "gpt-6.1-sol", effort: .low, transport: .api)
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                store.save(record) { error in if let error { continuation.resume(throwing: error) } else { continuation.resume() } }
+            }
+        }
+        let missingURL = store.directory.appendingPathComponent(missing.id.uuidString + ".json")
+        let damagedURL = store.directory.appendingPathComponent(damaged.id.uuidString + ".json")
+        let original = try Data(contentsOf: missingURL)
+        try FileManager.default.removeItem(at: missingURL)
+        try Data("invalid JSON".utf8).write(to: damagedURL)
+        let reopened = try ConversationStore(directory: store.directory)
+        let results = try await reopened.search("zafiro")
+        XCTAssertEqual(results, [healthy.id])
+        let titles = try await reopened.search("chat")
+        XCTAssertEqual(titles, [damaged.id, missing.id, healthy.id])
+        do { _ = try await reopened.load(damaged.id); XCTFail("Opening damaged chat must still report an error") }
+        catch { /* Search recovery must not silently replace the stored conversation. */ }
+        try original.write(to: missingURL)
+        let restored = try await reopened.search("zafiro")
+        XCTAssertEqual(restored, [missing.id, healthy.id])
+    }
     @MainActor func testHistoryFilteringPreservesDraftAndNavigationState() async throws {
         let store = try store(), defaults = UserDefaults(suiteName: "com.boltbar.tests.history.search")!
         let model = ChatModel(defaults: defaults, historyStore: store, streamer: { _, update in await update(.text("Respuesta zafiro")) })
