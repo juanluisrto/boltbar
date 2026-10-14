@@ -31,11 +31,25 @@ install_app() {
   dest="$PREFIX/Boltbar.app"
   say "installing to $dest"
   mkdir -p "$PREFIX"
-  rm -rf "$dest"
-  cp -R "$src" "$dest"
-  xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
+  stage=$(mktemp -d "$PREFIX/.boltbar-install.XXXXXX")
+  cp -R "$src" "$stage/Boltbar.app"
+  if [ -e "$dest" ]; then
+    backup="$PREFIX/Boltbar.backup.$(date +%Y%m%d-%H%M%S).app"
+    [ ! -e "$backup" ] || die "backup already exists: $backup"
+    mv "$dest" "$backup"
+    say "previous installation preserved at $backup"
+  fi
+  mv "$stage/Boltbar.app" "$dest"
+  rmdir "$stage"
   say "installed. Launch Boltbar from $dest, then press Opt+Space."
 }
+
+if [ -f ./Package.swift ] && [ -f ./scripts/build-native.sh ]; then
+  say "building the native Swift checkout"
+  sh scripts/build-native.sh
+  install_app "build/Boltbar.app"
+  exit 0
+fi
 
 if [ -n "$REPO" ]; then
   API="https://api.github.com/repos/${REPO}/releases/latest"
@@ -60,21 +74,4 @@ if [ -n "$REPO" ]; then
   say "no published universal zip yet; falling back to a source build if possible"
 fi
 
-if [ -f "./src-tauri/tauri.conf.json" ] && [ -f "./package.json" ]; then
-  command -v cargo >/dev/null 2>&1 || die "Rust/cargo is required to build from source"
-  command -v npm >/dev/null 2>&1 || die "npm is required to build from source"
-  say "building Boltbar from this checkout (universal if both Apple targets are installed)"
-  npm install
-  if rustup target list --installed 2>/dev/null | grep -q 'aarch64-apple-darwin' \
-    && rustup target list --installed 2>/dev/null | grep -q 'x86_64-apple-darwin'; then
-    npm run tauri -- build --target universal-apple-darwin
-  else
-    npm run tauri -- build
-  fi
-  APP=$(find target -path '*/bundle/macos/Boltbar.app' -type d 2>/dev/null | head -n 1 || true)
-  [ -n "$APP" ] || die "the build finished without Boltbar.app"
-  install_app "$APP"
-  exit 0
-fi
-
-die "set BOLTBAR_REPO=owner/name after publishing a GitHub repo, or run this script from a Boltbar checkout"
+die "No published app found. Clone the Swift branch and run sh scripts/build-native.sh."
