@@ -61,12 +61,12 @@ impl SecretStore for KeychainStore {
                     Ok(Some(text))
                 }
             }
-            Err(_) => Ok(None),
+            Err(e) if e.code() == -25300 => Ok(None),
+            Err(e) => Err(BoltError::msg(format!("keychain read failed: {e}"))),
         }
     }
 
     fn set(&self, account: &str, secret: &str) -> Result<()> {
-        let _ = security_framework::passwords::delete_generic_password(KEYCHAIN_SERVICE, account);
         security_framework::passwords::set_generic_password(
             KEYCHAIN_SERVICE,
             account,
@@ -78,7 +78,8 @@ impl SecretStore for KeychainStore {
     fn delete(&self, account: &str) -> Result<()> {
         match security_framework::passwords::delete_generic_password(KEYCHAIN_SERVICE, account) {
             Ok(()) => Ok(()),
-            Err(_) => Ok(()),
+            Err(e) if e.code() == -25300 => Ok(()),
+            Err(e) => Err(BoltError::msg(format!("keychain delete failed: {e}"))),
         }
     }
 }

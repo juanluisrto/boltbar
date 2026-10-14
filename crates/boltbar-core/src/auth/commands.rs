@@ -8,7 +8,20 @@ pub struct SystemCommands;
 
 impl CommandProbe for SystemCommands {
     fn find(&self, name: &str) -> Option<PathBuf> {
-        which::which(name).ok()
+        which::which(name).ok().or_else(|| {
+            let mut dirs = vec![PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")];
+            if let Some(home) = dirs::home_dir() {
+                dirs.push(home.join(".local/bin"));
+                dirs.push(home.join(".cargo/bin"));
+            }
+            dirs.into_iter().map(|dir| dir.join(name)).find(|path| {
+                #[cfg(unix)] {
+                    use std::os::unix::fs::PermissionsExt;
+                    path.metadata().map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+                }
+                #[cfg(not(unix))] { path.is_file() }
+            })
+        })
     }
 }
 
