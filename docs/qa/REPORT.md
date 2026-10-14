@@ -2,6 +2,8 @@
 
 Pruebas del 14 de octubre de 2026, MacBook Pro M1 Pro, macOS 27.0 (26A428), pantalla integrada. Xcode/Swift 6.4. La release original fue v0.1.3. Tras la primera comparación, el propietario pidió sustituir Tauri por Swift y cambiar el icono; esa es la implementación propuesta en `swift-spike`. `mac-qa` conserva la investigación anterior.
 
+PR de la migración y correcciones: [#1](https://github.com/juanluisrto/boltbar/pull/1). Abierto para revisión, sin merge ni release.
+
 ## Resultado
 
 La implementación nueva usa SwiftUI, `NSPanel`, `NSTextView`, Carbon, Security.framework y URLSession. No ejecuta React, Rust, Tauri ni WebKit. El editor parte de una línea (26 pt), crece hasta 160 pt y después hace scroll. Los adjuntos pertenecen al mensaje enviado: permanecen visibles y se incluyen en los siguientes turnos. Se mueve arrastrando el fondo libre. Los cuatro bordes redimensionan un eje y las cuatro esquinas ambos, sin tiradores visibles. El historial se abre dentro de la barra, con selección gris, títulos, fechas y navegación con ↑/↓, Return y ←. El chip muestra modelo y gauge de esfuerzo; Settings queda en ⌘, y en el menú. El icono es un rayo ámbar propio.
@@ -18,8 +20,8 @@ OK significa observado en este Mac; FALLA indica un defecto reproducido. PARCIAL
 
 | Funcionalidad | Release v0.1.3 | Swift | Evidencia |
 |---|---|---|---|
-| Barra oscura, opaca, esquinas y botones completos | OK en la captura; demasiado espacio de escritura para el uso esperado | OK, editor de una línea | [Antes](screenshots/release-01-bar.jpg), [después](screenshots/native-01-compact.jpg) |
-| ⌥ Espacio abre una conversación vacía; Esc oculta | Atajo físico confirmado por el propietario en Tauri corregido, no en la release original | OK, confirmado físicamente por el propietario; registro Carbon `noErr` | [Barra vacía](screenshots/native-01-compact.jpg); confirmación manual registrada durante la sesión |
+| Barra oscura, opaca, esquinas y botones completos | OK en la captura; demasiado espacio de escritura para el uso esperado | OK, editor de una línea | [Antes](screenshots/release-01-bar.jpg), [después](screenshots/native-22-gauge-chip.jpg) |
+| ⌥ Espacio abre una conversación vacía; Esc oculta | Atajo físico confirmado por el propietario en Tauri corregido, no en la release original | OK, confirmado físicamente por el propietario; registro Carbon `noErr` | [Barra vacía](screenshots/native-22-gauge-chip.jpg); confirmación manual registrada durante la sesión |
 | Texto largo crece y después hace scroll | OK | OK; corregido un recorte horizontal descubierto en la primera versión nativa | [Release](screenshots/release-09-long-input.jpg), [fallo nativo inicial](screenshots/native-before-long-input-clipped.jpg), [corrección](screenshots/native-05-long-input.jpg) |
 | Mover y redimensionar la barra | NP en release | Defecto comunicado por el propietario; controles AppKit añadidos y probados mediante arrastre | [Redimensionada](screenshots/native-08-manual-resize.jpg), geometría en `metrics.json` |
 | Selector de archivos: imagen y documento; quitar con ✕ | OK | OK: selector, pegado de imagen desde Preview y botón ✕ | [Release](screenshots/release-10-attachments.jpg), [quitar en release](screenshots/release-11-removed.jpg), [pegado nativo](screenshots/native-13-pasted-image.jpg), [quitar en Swift](screenshots/native-14-removed-image.jpg) |

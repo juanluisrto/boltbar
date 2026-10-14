@@ -2,7 +2,7 @@
 
 A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. The native implementation replaces the Tauri/React runtime on this branch. macOS 13 or newer.
 
-![Compact native bar](docs/qa/screenshots/native-01-compact.jpg)
+![Compact native bar](docs/qa/screenshots/native-22-gauge-chip.jpg)
 
 - **⌥ Space** opens a new conversation; **Esc** hides it. **⌘N** starts fresh and **⌘,** opens a separate Settings window.
 - A one-line editor grows upward to eight lines, then scrolls. Drag any border to resize one dimension, or a corner to resize both. Drag the blank top strip or toolbar background to move the bar.
