@@ -18,6 +18,8 @@ import {
 } from "./types";
 
 export default function SettingsApp() {
+  const [hotkeyDraft, setHotkeyDraft] = useState("");
+  const [cursorUrlDraft, setCursorUrlDraft] = useState("");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [keychainNative, setKeychainNative] = useState(false);
@@ -30,6 +32,8 @@ export default function SettingsApp() {
     bootstrap()
       .then((data) => {
         setSettings(data.settings);
+        setHotkeyDraft(data.settings.hotkey);
+        setCursorUrlDraft(data.settings.cursor_base_url ?? "");
         setProviders(data.providers);
         setKeychainNative(data.keychain_native);
         setLoading(false);
@@ -42,8 +46,20 @@ export default function SettingsApp() {
 
   const persist = useCallback(async (next: Settings) => {
     setSettings(next);
-    const updated = await saveUserSettings(next);
-    setProviders(updated);
+    try {
+      const updated = await saveUserSettings(next);
+      setProviders(updated);
+      setError(null);
+    } catch (err) {
+      setError(String(err));
+      // A rejected shortcut must not leave the UI claiming it was saved.
+      try {
+        const saved = await bootstrap();
+        setSettings(saved.settings);
+        setHotkeyDraft(saved.settings.hotkey);
+        setCursorUrlDraft(saved.settings.cursor_base_url ?? "");
+      } catch { /* Preserve the original save error if recovery also fails. */ }
+    }
   }, []);
 
   return (
@@ -126,23 +142,22 @@ export default function SettingsApp() {
               <label className="mb-3 block text-xs text-[var(--muted)]">
                 Hotkey
                 <input
-                  value={settings.hotkey}
+                  value={hotkeyDraft}
                   className="mt-1 w-full rounded-lg border border-white/10 bg-[#1b1b1d] px-2 py-1.5 text-sm text-[var(--text)]"
-                  onChange={(event) => void persist({ ...settings, hotkey: event.target.value })}
+                  onChange={(event) => setHotkeyDraft(event.target.value)}
+                  onBlur={() => { if (hotkeyDraft !== settings.hotkey) void persist({ ...settings, hotkey: hotkeyDraft }); }}
+                  onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
                 />
               </label>
               <label className="block text-xs text-[var(--muted)]">
                 Cursor OpenAI-compatible base URL (optional)
                 <input
-                  value={settings.cursor_base_url ?? ""}
+                  value={cursorUrlDraft}
                   placeholder="https://proxy.example/v1"
                   className="mt-1 w-full rounded-lg border border-white/10 bg-[#1b1b1d] px-2 py-1.5 text-sm text-[var(--text)]"
-                  onChange={(event) =>
-                    void persist({
-                      ...settings,
-                      cursor_base_url: event.target.value.trim() || null,
-                    })
-                  }
+                  onChange={(event) => setCursorUrlDraft(event.target.value)}
+                  onBlur={() => { const value = cursorUrlDraft.trim() || null; if (value !== settings.cursor_base_url) void persist({ ...settings, cursor_base_url: value }); }}
+                  onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
                 />
               </label>
             </section>
@@ -159,7 +174,7 @@ export default function SettingsApp() {
                     void refreshModels()
                       .then((next) => {
                         setProviders(next);
-                        setNotice("Model lists refreshed from providers");
+                        setNotice("Model refresh complete. Unavailable catalogs use the listed fallbacks.");
                         setError(null);
                       })
                       .catch((err: unknown) => {
@@ -229,6 +244,7 @@ export default function SettingsApp() {
                           onClick={() => {
                             void setApiKey(item.id, keyDrafts[item.id] ?? "")
                               .then((auth) => {
+                                setKeyDrafts((drafts) => ({ ...drafts, [item.id]: "" }));
                                 setProviders(
                                   providers.map((p) => (p.id === item.id ? { ...p, auth } : p)),
                                 );

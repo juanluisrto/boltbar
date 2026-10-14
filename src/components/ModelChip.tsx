@@ -49,7 +49,8 @@ export function ModelChip({
           <ChevronDownIcon size={12} className="text-[var(--muted)]" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start">
+      <PopoverContent side="top" align="start" collisionPadding={14}
+        onEscapeKeyDown={(event) => { event.preventDefault(); onOpenChange(false); }}>
         <div className="mb-2 flex items-center justify-between text-xs">
           <span className="text-[var(--muted)]">Thinking effort</span>
           <span className="text-[var(--text)]">{effortLabel(effort)}</span>

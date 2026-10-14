@@ -25,8 +25,8 @@ export function ResizeHandle({
         return;
       }
       const delta = invert
-        ? start.current.y - event.clientY
-        : event.clientY - start.current.y;
+        ? start.current.y - event.screenY
+        : event.screenY - start.current.y;
       const next = Math.min(max, Math.max(min, start.current.height + delta));
       latest.current = next;
       onChange(next);
@@ -52,7 +52,7 @@ export function ResizeHandle({
       aria-label="Drag to resize the input"
       className="flex h-3 w-full cursor-row-resize items-center justify-center border-0 bg-transparent p-0"
       onMouseDown={(event) => {
-        start.current = { y: event.clientY, height: value };
+        start.current = { y: event.screenY, height: value };
         document.body.style.cursor = "row-resize";
         event.preventDefault();
       }}

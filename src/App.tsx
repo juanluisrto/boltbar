@@ -18,6 +18,9 @@ import {
   isTauri,
   onChatEvent,
   onConversationReset,
+  newChat,
+  onSettingsChanged,
+  onNativeDrop,
   openSettings,
   pickFilePaths,
   readFiles,
@@ -58,6 +61,7 @@ export default function App() {
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const picking = useRef(false);
+  const activeRequest = useRef<string | null>(null);
   const [contentHeight, setContentHeight] = useState(MIN_INPUT);
   const [liveHeight, setLiveHeight] = useState<number | null>(null);
 
@@ -93,10 +97,12 @@ export default function App() {
   }, []);
 
   const resetConversation = useCallback(() => {
+    activeRequest.current = null;
     void stopChat();
     setMessages([]);
     setAssistant("");
     setDraft("");
+    setContentHeight(MIN_INPUT);
     setAttachments([]);
     setStreaming(false);
     setChipOpen(false);
@@ -106,7 +112,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unlistenChat = onChatEvent((event) => {
+    const unlistenChat = onChatEvent((event, requestId) => {
+      if (requestId && requestId !== activeRequest.current) return;
       switch (event.type) {
         case "delta":
           setAssistant((prev) => prev + event.text);
@@ -158,16 +165,22 @@ export default function App() {
       void resizeBar(width, height);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, assistant, attachments, chipOpen, inputHeight, error, notice, draft]);
+  }, [load, messages, assistant, attachments, chipOpen, inputHeight, error, notice, draft]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "n") {
+        event.preventDefault();
+        void newChat();
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault();
         setChipOpen(false);
         void openSettings();
         return;
       }
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         if (chipOpen) {
           setChipOpen(false);
@@ -181,25 +194,29 @@ export default function App() {
   }, [chipOpen]);
 
   useEffect(() => {
-    const onBlur = () => {
-      if (!isTauri() || picking.current || chipOpen) {
-        return;
-      }
-      window.setTimeout(() => {
-        if (document.hasFocus() || picking.current) {
-          return;
-        }
-        void hideBar();
-      }, 180);
-    };
-    window.addEventListener("blur", onBlur);
-    return () => window.removeEventListener("blur", onBlur);
-  }, [chipOpen]);
+    const unlisten = onSettingsChanged((data) => {
+      setSettings(data.settings);
+      setProviders(data.providers);
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = onNativeDrop((paths, hovering) => {
+      setDragOver(hovering);
+      if (paths.length) void readFiles(paths).then((atts) => {
+        setAttachments((prev) => [...prev, ...atts].slice(0, 6));
+      }).catch((err: unknown) => setError(String(err)));
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, []);
 
   const persist = useCallback(async (next: Settings) => {
     setSettings(next);
-    const updated = await saveUserSettings(next);
-    setProviders(updated);
+    try {
+      const updated = await saveUserSettings(next);
+      setProviders(updated);
+    } catch (err) { setError(String(err)); }
   }, []);
 
   const addFiles = useCallback(async (files: File[]) => {
@@ -244,6 +261,8 @@ export default function App() {
         };
         input.click();
       }
+    } catch (err) {
+      setError(String(err));
     } finally {
       window.setTimeout(() => {
         picking.current = false;
@@ -270,13 +289,15 @@ export default function App() {
     setError(null);
     setChipOpen(false);
     try {
+      const requestId = crypto.randomUUID();
+      activeRequest.current = requestId;
       await startChat({
         provider,
         model,
         messages: history,
         attachments,
         effort,
-      });
+      }, requestId);
       setAttachments([]);
     } catch (err) {
       setStreaming(false);
@@ -324,7 +345,7 @@ export default function App() {
 
   return (
     <Shell web={web}>
-      <div ref={rootRef} className="overlay-frame">
+      <div ref={rootRef} className={`overlay-frame ${chipOpen ? "with-popover" : ""}`}>
       <div
         className={`glass overflow-hidden rounded-[22px] ${dragOver ? "outline outline-2 outline-[var(--gold)]" : ""}`}
         onDragOver={(event) => {
@@ -347,7 +368,7 @@ export default function App() {
         </header>
 
         {hasThread && (
-          <div className="max-h-[48vh] space-y-3 overflow-auto px-4 py-3">
+          <div className="max-h-[340px] space-y-3 overflow-auto px-4 py-3">
             {messages.map((msg, idx) => (
               <article key={`${msg.role}-${idx}`} className="text-sm">
                 <div className="mb-1 text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
@@ -421,7 +442,7 @@ export default function App() {
             onChange={(event) => setDraft(event.target.value)}
             onPaste={onPaste}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 void send();
               }

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type {
   Attachment,
   AuthStatus,
@@ -83,12 +84,12 @@ export async function setApiKey(
   return invoke<AuthStatus>("set_api_key", { provider, key });
 }
 
-export async function startChat(request: ChatRequest): Promise<void> {
+export async function startChat(request: ChatRequest, requestId: string): Promise<void> {
   if (!isTauri()) {
     window.dispatchEvent(new CustomEvent("boltbar-mock-chat", { detail: request }));
     return;
   }
-  await invoke("start_chat", { request });
+  await invoke("start_chat", { request, requestId });
 }
 
 export async function stopChat(): Promise<void> {
@@ -104,6 +105,10 @@ export async function hideBar(): Promise<void> {
     return;
   }
   await invoke("hide_bar");
+}
+
+export async function newChat(): Promise<void> {
+  if (isTauri()) await invoke("new_chat");
 }
 
 export async function resizeBar(width: number, height: number): Promise<void> {
@@ -135,7 +140,7 @@ export async function readFiles(paths: string[]): Promise<Attachment[]> {
 }
 
 export async function onChatEvent(
-  handler: (event: StreamEvent) => void,
+  handler: (event: StreamEvent, requestId?: string) => void,
 ): Promise<UnlistenFn> {
   if (!isTauri()) {
     let timer: number | null = null;
@@ -179,7 +184,7 @@ export async function onChatEvent(
       window.removeEventListener("boltbar-mock-stop", onStop);
     };
   }
-  return listen<StreamEvent>("chat-event", (event) => handler(event.payload));
+  return listen<{ request_id: string; event: StreamEvent }>("chat-event", ({ payload }) => handler(payload.event, payload.request_id));
 }
 
 export async function onConversationReset(handler: () => void): Promise<UnlistenFn> {
@@ -187,4 +192,17 @@ export async function onConversationReset(handler: () => void): Promise<Unlisten
     return () => undefined;
   }
   return listen("conversation-reset", () => handler());
+}
+
+export async function onSettingsChanged(handler: (data: Bootstrap) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined;
+  return listen<Bootstrap>("settings-changed", (event) => handler(event.payload));
+}
+
+export async function onNativeDrop(handler: (paths: string[], hovering: boolean) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined;
+  return getCurrentWebview().onDragDropEvent(({ payload }) => {
+    if (payload.type === "drop") handler(payload.paths, false);
+    else handler([], payload.type !== "leave");
+  });
 }

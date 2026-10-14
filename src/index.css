@@ -27,6 +27,13 @@ body,
   padding: 14px;
 }
 
+/* A DOM portal cannot draw outside the native webview. Reserve real space. */
+.overlay-frame.with-popover { padding-top: 234px; }
+
+html:has(.settings-native),
+html:has(.settings-native) body,
+html:has(.settings-native) #root { overflow-y: auto; height: auto; min-height: 100%; }
+
 body {
   font-family:
     "SF Pro Text",

@@ -21,7 +21,7 @@ struct AppState {
     settings: Mutex<Settings>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct Bootstrap {
     settings: Settings,
     providers: Vec<ProviderInfo>,
@@ -35,10 +35,10 @@ fn data_dir(app: &AppHandle) -> std::path::PathBuf {
 }
 
 #[tauri::command]
-async fn bootstrap(app: AppHandle, state: State<'_, AppState>) -> Result<Bootstrap, String> {
+async fn bootstrap(state: State<'_, AppState>) -> Result<Bootstrap, String> {
     let settings = state.settings.lock().await.clone();
     let providers = state.engine.providers(&settings, true).await;
-    let _ = app;
+
     Ok(Bootstrap {
         settings,
         providers,
@@ -52,16 +52,24 @@ async fn save_user_settings(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<Vec<ProviderInfo>, String> {
-    save_settings(&data_dir(&app), &settings).map_err(|e| e.to_string())?;
+    let mut saved_settings = state.settings.lock().await;
+    let previous = saved_settings.clone();
+    if settings.hotkey != previous.hotkey {
+        register_hotkey(&app, &settings.hotkey, Some(&previous.hotkey))?;
+    }
+    if let Err(err) = save_settings(&data_dir(&app), &settings) {
+        let _ = register_hotkey(&app, &previous.hotkey, Some(&settings.hotkey));
+        return Err(err.to_string());
+    }
     {
         let mut url = state.engine.cursor_base_url.lock().map_err(|e| e.to_string())?;
         *url = settings.cursor_base_url.clone();
     }
-    if let Err(err) = register_hotkey(&app, &settings.hotkey) {
-        eprintln!("boltbar: could not register hotkey: {err}");
-    }
     let providers = state.engine.providers(&settings, false).await;
-    *state.settings.lock().await = settings;
+    *saved_settings = settings.clone();
+    let _ = app.emit("settings-changed", Bootstrap {
+        settings, providers: providers.clone(), keychain_native: cfg!(target_os = "macos"),
+    });
     Ok(providers)
 }
 
@@ -92,9 +100,13 @@ async fn set_api_key(
 }
 
 #[tauri::command]
-async fn refresh_models(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, String> {
+async fn refresh_models(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, String> {
     let settings = state.settings.lock().await.clone();
-    Ok(state.engine.providers(&settings, true).await)
+    let providers = state.engine.providers(&settings, true).await;
+    let _ = app.emit("settings-changed", Bootstrap {
+        settings, providers: providers.clone(), keychain_native: cfg!(target_os = "macos"),
+    });
+    Ok(providers)
 }
 
 #[tauri::command]
@@ -115,6 +127,7 @@ async fn start_chat(
     app: AppHandle,
     state: State<'_, AppState>,
     request: ChatRequest,
+    request_id: String,
 ) -> Result<(), String> {
     let engine = state.engine.clone();
     tokio::spawn(async move {
@@ -122,7 +135,7 @@ async fn start_chat(
         let emit = app.clone();
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
-                let _ = emit.emit("chat-event", event);
+                let _ = emit.emit("chat-event", serde_json::json!({ "request_id": request_id, "event": event }));
             }
         });
         engine.stream_chat(request, tx).await;
@@ -145,22 +158,28 @@ async fn hide_bar(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn new_chat(app: AppHandle) { show_bar(&app); }
+
+#[tauri::command]
 async fn resize_bar(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         let w = width.clamp(
             boltbar_core::settings::MIN_BAR_WIDTH,
             boltbar_core::settings::MAX_BAR_WIDTH,
         );
+        let monitor = win.current_monitor().ok().flatten();
+        let screen_height = monitor.as_ref().map(|m| f64::from(m.size().height) / m.scale_factor() - 80.0).unwrap_or(900.0);
         let h = height.clamp(
             boltbar_core::settings::MIN_BAR_HEIGHT,
-            boltbar_core::settings::MAX_BAR_HEIGHT,
+            boltbar_core::settings::MAX_BAR_HEIGHT.min(screen_height),
         );
         let scale = win.scale_factor().unwrap_or(1.0);
         if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
             let old_h = f64::from(size.height) / scale;
             let delta = h - old_h;
             if delta.abs() > 0.5 {
-                let new_y = f64::from(pos.y) - delta * scale;
+                let top = monitor.as_ref().map(|m| f64::from(m.position().y) + 38.0 * scale).unwrap_or(0.0);
+                let new_y = (f64::from(pos.y) - delta * scale).max(top);
                 let _ = win.set_position(PhysicalPosition::new(pos.x, new_y.round() as i32));
             }
         }
@@ -173,7 +192,14 @@ async fn resize_bar(app: AppHandle, width: f64, height: f64) -> Result<(), Strin
 #[tauri::command]
 async fn read_files(paths: Vec<String>) -> Result<Vec<boltbar_core::Attachment>, String> {
     let mut out = Vec::new();
+    if paths.len() > boltbar_core::attachments::MAX_ATTACHMENTS {
+        return Err("At most 6 attachments are allowed".into());
+    }
     for path in paths {
+        let metadata = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+        if !metadata.is_file() || metadata.len() > boltbar_core::attachments::MAX_ATTACHMENT_BYTES as u64 {
+            return Err("Choose files of at most 10 MB each".into());
+        }
         let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
         let name = std::path::Path::new(&path)
             .file_name()
@@ -212,6 +238,7 @@ fn guess_mime(name: &str) -> String {
 }
 
 fn open_settings_window(app: &AppHandle) -> Result<(), String> {
+    hide_main(app);
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.show();
         let _ = win.set_focus();
@@ -233,11 +260,16 @@ fn open_settings_window(app: &AppHandle) -> Result<(), String> {
 }
 
 fn show_bar(app: &AppHandle) {
+    let started = std::time::Instant::now();
     let _ = app.emit("conversation-reset", ());
     if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_visible_on_all_workspaces(true);
         let _ = win.center();
         let _ = win.show();
         let _ = win.set_focus();
+    }
+    if std::env::var_os("BOLTBAR_QA_METRICS").is_some() {
+        eprintln!("{}", serde_json::json!({"kind":"show_native", "ms":started.elapsed().as_secs_f64()*1000.0}));
     }
 }
 
@@ -247,26 +279,22 @@ fn hide_main(app: &AppHandle) {
     }
 }
 
-fn toggle_bar(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        if win.is_visible().unwrap_or(false) {
-            hide_main(app);
-        } else {
-            show_bar(app);
-        }
-    }
-}
-
-fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
+fn register_hotkey(app: &AppHandle, hotkey: &str, previous: Option<&str>) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
     let shortcut: Shortcut = hotkey
         .parse()
         .map_err(|e| format!("invalid hotkey '{hotkey}': {e}"))?;
-    let _ = app.global_shortcut().unregister_all();
-    app.global_shortcut()
-        .register(shortcut)
-        .map_err(|e| e.to_string())
+    // Register first: a collision must not destroy the existing working shortcut.
+    if !app.global_shortcut().is_registered(shortcut) {
+        app.global_shortcut().register(shortcut).map_err(|e| e.to_string())?;
+    }
+    if let Some(previous) = previous {
+        if let Ok(old) = previous.parse::<Shortcut>() {
+            if old != shortcut { let _ = app.global_shortcut().unregister(old); }
+        }
+    }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -281,7 +309,7 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        toggle_bar(app);
+                        show_bar(app);
                     }
                 })
                 .build(),
@@ -306,9 +334,9 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
-            if let Err(err) = register_hotkey(&handle, &settings.hotkey) {
+            if let Err(err) = register_hotkey(&handle, &settings.hotkey, None) {
                 eprintln!("boltbar: could not register hotkey: {err}");
-                let _ = register_hotkey(&handle, boltbar_core::settings::DEFAULT_HOTKEY);
+                let _ = register_hotkey(&handle, boltbar_core::settings::DEFAULT_HOTKEY, None);
             }
 
             let show = MenuItem::with_id(app, "show", "New chat", true, Some("Alt+Space"))?;
@@ -331,17 +359,19 @@ pub fn run() {
                     "quit" => app.exit(0),
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        toggle_bar(tray.app_handle());
-                    }
-                })
                 .build(app)?;
+
+            #[cfg(target_os = "macos")]
+            if let Some(win) = app.get_webview_window("main") {
+                if let Ok(ptr) = win.ns_window() {
+                    // The pointer is owned by Tauri and this setup runs on the main thread.
+                    unsafe {
+                        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
+                        let native = &*ptr.cast::<NSWindow>();
+                        native.setCollectionBehavior(B::CanJoinAllSpaces | B::FullScreenAuxiliary);
+                    }
+                }
+            }
 
             // First-run: show the bar so the user knows it launched.
             show_bar(&app.handle());
@@ -362,9 +392,15 @@ pub fn run() {
             start_chat,
             stop_chat,
             hide_bar,
+            new_chat,
             resize_bar,
             read_files
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running boltbar");
+        .build(tauri::generate_context!())
+        .expect("error while building boltbar")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event { show_bar(app); }
+            let _ = (app, event);
+        });
 }
