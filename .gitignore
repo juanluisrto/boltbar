@@ -31,3 +31,8 @@ src-tauri/gen
 
 # Agent scratch
 /agent-tools
+
+# Native Swift builds
+/.build
+/build
+/.swiftpm
