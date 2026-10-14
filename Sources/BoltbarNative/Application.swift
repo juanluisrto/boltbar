@@ -16,6 +16,7 @@ final class ChatPanel: NSPanel {
     var hotkey: EventHotKeyRef?
     var hotkeyHandler: EventHandlerRef?
     private var catalogTimer: Timer?
+    private var attachmentPicker: NSOpenPanel?
     private var lastPanelSize = NSSize(width: 700, height: 107)
     private var bottomAnchor: CGFloat?
     private var adjustingAnchor = false
@@ -36,6 +37,7 @@ final class ChatPanel: NSPanel {
         panel.contentView = host
         model.resize = { [weak self] in self?.fit($0) }
         model.openSettings = { [weak self] in self?.showSettings() }
+        model.presentFilePicker = { [weak self] in self?.showAttachmentPicker() }
         model.newConversation = { [weak self] in self?.show() }
         model.focusComposer = { [weak self] in self?.focusComposer() }
         model.updateShortcut = { [weak self] key, modifiers, label in
@@ -101,6 +103,8 @@ final class ChatPanel: NSPanel {
         panel.setFrame(frame, display: true)
     }
     @objc func show() {
+        // A global shortcut must not reset the draft behind an open file sheet.
+        if let attachmentPicker { attachmentPicker.makeKeyAndOrderFront(nil); return }
         let start = ProcessInfo.processInfo.systemUptime
         settings?.orderOut(nil)
         model.reset(); fit(NSSize(width: model.panelWidth, height: 112))
@@ -112,6 +116,7 @@ final class ChatPanel: NSPanel {
         metric(["kind": "show_layout", "ms": (ProcessInfo.processInfo.systemUptime - start) * 1000])
     }
     private func focusComposer() {
+        guard attachmentPicker == nil else { return }
         func focus(_ view: NSView) {
             if let text = view as? ComposerTextView { panel.makeFirstResponder(text) } else { view.subviews.forEach(focus) }
         }
@@ -146,6 +151,7 @@ final class ChatPanel: NSPanel {
         metric(["kind": "panel_frame", "x": panel.frame.minX, "y": panel.frame.minY, "width": panel.frame.width, "height": panel.frame.height])
     }
     @objc func showSettings() {
+        if let attachmentPicker { attachmentPicker.makeKeyAndOrderFront(nil); return }
         panel.orderOut(nil)
         if settings == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -154,6 +160,25 @@ final class ChatPanel: NSPanel {
             window.contentView = NSHostingView(rootView: SettingsView(model: model)); window.center(); settings = window
         }
         settings?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+    private func showAttachmentPicker() {
+        if let attachmentPicker { attachmentPicker.makeKeyAndOrderFront(nil); return }
+        let picker = NSOpenPanel()
+        picker.title = "Attach images or documents"
+        picker.canChooseDirectories = false; picker.allowsMultipleSelection = true
+        attachmentPicker = picker
+        NSApp.activate(ignoringOtherApps: true)
+        // A sheet belongs to the floating panel, so AppKit orders it above its
+        // parent instead of leaving an independent normal-level dialog behind.
+        picker.beginSheetModal(for: panel) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.attachmentPicker = nil
+                if result == .OK { self.model.addURLs(picker.urls) }
+                self.panel.makeKeyAndOrderFront(nil)
+                self.focusComposer()
+            }
+        }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
     func applicationWillTerminate(_ notification: Notification) { model.finish(); catalogTimer?.invalidate(); if let hotkey { UnregisterEventHotKey(hotkey) } }

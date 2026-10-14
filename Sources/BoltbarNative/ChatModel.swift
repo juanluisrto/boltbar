@@ -23,6 +23,7 @@ import SwiftUI
     @Published var refreshing = false
     var resize: ((NSSize) -> Void)?
     var openSettings: (() -> Void)?
+    var presentFilePicker: (() -> Void)?
     var newConversation: (() -> Void)?
     var focusComposer: (() -> Void)?
     var resizeOrigin: NSPoint?
@@ -192,12 +193,7 @@ import SwiftUI
         do { add(try urls.map(Attachment.init(url:))) } catch { self.error = error.localizedDescription }
     }
     func pickFiles() {
-        let picker = NSOpenPanel()
-        picker.canChooseDirectories = false; picker.allowsMultipleSelection = true
-        picker.title = "Attach images or documents"
-        picker.begin { [weak self] result in
-            if result == .OK { Task { @MainActor in self?.addURLs(picker.urls) } }
-        }
+        presentFilePicker?()
     }
     func receive(_ pasteboard: NSPasteboard) -> Bool {
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
