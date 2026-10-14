@@ -233,11 +233,6 @@ pub fn rank_models(kind: ProviderKind, mut ids: Vec<String>) -> Vec<String> {
             .map(|s| (*s).to_string())
             .collect();
     }
-    for fallback in fallback_models(kind) {
-        if !ids.iter().any(|id| id == fallback) {
-            ids.push((*fallback).to_string());
-        }
-    }
     let preferred = fallback_models(kind);
     ids.sort_by(|a, b| {
         let ia = preferred.iter().position(|p| p == a).unwrap_or(500);
@@ -335,11 +330,11 @@ async fn fetch_cursor(
     fetch_cursor_cli_on_path().await
 }
 
-async fn fetch_cursor_cli(
+pub async fn fetch_cursor_cli(
     program: &str,
     extra_env: &[(String, String)],
 ) -> Result<Vec<String>> {
-    for args in [vec!["--list-models"], vec!["models"]] {
+    for args in [vec!["--list-models"]] {
         let mut cmd = Command::new(program);
         cmd.args(&args)
             .kill_on_drop(true)
@@ -350,6 +345,9 @@ async fn fetch_cursor_cli(
             cmd.env(k, v);
         }
         if let Ok(out) = timed_output(cmd).await {
+            if !out.status.success() {
+                return Err(crate::error::BoltError::auth("Run `agent login` and refresh models."));
+            }
             if out.status.success() {
                 let text = String::from_utf8_lossy(&out.stdout);
                 let parsed = parse_cursor_models_output(&text);
@@ -359,7 +357,7 @@ async fn fetch_cursor_cli(
             }
         }
     }
-    Ok(Vec::new())
+    Err(crate::error::BoltError::msg("model list timed out"))
 }
 
 async fn fetch_cursor_cli_on_path() -> Result<Vec<String>> {
@@ -396,6 +394,11 @@ async fn timed_output(mut cmd: Command) -> Result<std::process::Output> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_catalog_does_not_invent_unavailable_models() {
+        assert_eq!(parse_openai_models_json(r#"{"data":[{"id":"gpt-6.1-sol"},{"id":"gpt-4o"},{"id":"gpt-6-audio"}]}"#), vec!["gpt-6.1-sol"]);
+    }
 
     #[test]
     fn openai_filters_non_chat_and_drops_dated_duplicates() {

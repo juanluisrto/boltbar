@@ -205,8 +205,7 @@ pub async fn pump_openai_sse(
             return Err(BoltError::Cancelled);
         }
         let chunk = chunk?;
-        let text = String::from_utf8_lossy(&chunk);
-        for ev in parser.push(&text) {
+        for ev in parser.push_bytes(&chunk) {
             if extract_openai_done(&ev.data) {
                 let _ = tx.send(StreamEvent::Done).await;
                 return Ok(());
@@ -237,8 +236,7 @@ pub async fn pump_responses_sse(
             return Err(BoltError::Cancelled);
         }
         let chunk = chunk?;
-        let text = String::from_utf8_lossy(&chunk);
-        for ev in parser.push(&text) {
+        for ev in parser.push_bytes(&chunk) {
             if responses_is_done(&ev.data) {
                 let _ = tx.send(StreamEvent::Done).await;
                 return Ok(());

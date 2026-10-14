@@ -44,7 +44,16 @@ impl Engine {
         let mut infos = Vec::new();
         for id in ProviderKind::all().iter().copied() {
             let models = self.models_for_kind(id, refresh, cursor_base.as_deref()).await;
-            infos.push(self.provider_info(settings, id, Some(models)));
+            let mut info = self.provider_info(settings, id, Some(models));
+            if id == ProviderKind::Cursor {
+                if let Ok((ResolvedAuth::Cli { program, extra_env }, _)) = self.resolve(id) {
+                    if let Err(err) = crate::models::fetch_cursor_cli(&program, &extra_env).await {
+                        info.auth.ready = false;
+                        info.auth.label = format!("Cursor CLI unavailable: {err}");
+                    }
+                }
+            }
+            infos.push(info);
         }
         infos
     }
@@ -135,7 +144,10 @@ impl Engine {
             *slot = Some(cancel.clone());
         }
 
-        let result = self.dispatch(&req, tx.clone(), cancel).await;
+        let result = tokio::select! {
+            _ = cancel.cancelled() => Err(BoltError::Cancelled),
+            result = self.dispatch(&req, tx.clone(), cancel.clone()) => result,
+        };
         if let Err(err) = result {
             match err {
                 BoltError::Cancelled => {

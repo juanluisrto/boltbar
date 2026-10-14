@@ -2,6 +2,7 @@
 #[derive(Default)]
 pub struct SseParser {
     buf: String,
+    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,28 +13,31 @@ pub struct SseEvent {
 
 impl SseParser {
     pub fn new() -> Self {
-        Self { buf: String::new() }
+        Self::default()
+    }
+
+    /// Decode only complete UTF-8 sequences; network chunks can split an emoji.
+    pub fn push_bytes(&mut self, chunk: &[u8]) -> Vec<SseEvent> {
+        self.bytes.extend_from_slice(chunk);
+        let valid = match std::str::from_utf8(&self.bytes) {
+            Ok(_) => self.bytes.len(),
+            Err(err) => err.valid_up_to(),
+        };
+        let text = String::from_utf8_lossy(&self.bytes[..valid]).into_owned();
+        self.bytes.drain(..valid);
+        self.push(&text)
     }
 
     pub fn push(&mut self, chunk: &str) -> Vec<SseEvent> {
         self.buf.push_str(chunk);
         let mut out = Vec::new();
-        while let Some(idx) = self.buf.find("\n\n") {
+        loop {
+            let delimiter = [(self.buf.find("\n\n"), 2), (self.buf.find("\r\n\r\n"), 4)]
+                .into_iter().filter_map(|(idx, len)| idx.map(|idx| (idx, len))).min_by_key(|x| x.0);
+            let Some((idx, len)) = delimiter else { break; };
             let raw = self.buf[..idx].to_string();
-            self.buf = self.buf[idx + 2..].to_string();
-            if let Some(ev) = parse_block(&raw) {
-                out.push(ev);
-            }
-        }
-        // Also accept CRLF-delimited blocks.
-        if out.is_empty() {
-            if let Some(idx) = self.buf.find("\r\n\r\n") {
-                let raw = self.buf[..idx].to_string();
-                self.buf = self.buf[idx + 4..].to_string();
-                if let Some(ev) = parse_block(&raw) {
-                    out.push(ev);
-                }
-            }
+            self.buf.drain(..idx + len);
+            if let Some(ev) = parse_block(&raw) { out.push(ev); }
         }
         out
     }
@@ -146,6 +150,17 @@ pub fn responses_is_done(data: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fragmented_unicode_and_multiple_crlf_events() {
+        let raw = "data: café 🦀\r\n\r\ndata: fin\r\n\r\n";
+        for split in 0..=raw.len() {
+            let mut parser = SseParser::new();
+            let mut events = parser.push_bytes(&raw.as_bytes()[..split]);
+            events.extend(parser.push_bytes(&raw.as_bytes()[split..]));
+            assert_eq!(events.iter().map(|x| x.data.as_str()).collect::<Vec<_>>(), vec!["café 🦀", "fin"]);
+        }
+    }
 
     #[test]
     fn parses_chunked_openai_sse() {

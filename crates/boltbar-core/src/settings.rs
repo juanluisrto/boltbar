@@ -93,6 +93,11 @@ pub fn load_settings(app_data_dir: &Path) -> Settings {
     if settings.input_height <= 72 {
         settings.input_height = default_input_height();
     }
+    for provider in ProviderKind::all() {
+        if !crate::models::is_current_model(*provider, &settings.model_for(*provider)) {
+            settings.set_model(*provider, default_model(*provider));
+        }
+    }
     settings
 }
 
@@ -113,11 +118,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("boltbar-settings-{}", uuid::Uuid::new_v4()));
         let mut s = Settings::default();
         s.provider = ProviderKind::Openai;
-        s.set_model(ProviderKind::Openai, "gpt-4o-mini");
+        s.set_model(ProviderKind::Openai, "gpt-6.1-sol");
         save_settings(&dir, &s).unwrap();
         let loaded = load_settings(&dir);
         assert_eq!(loaded.provider, ProviderKind::Openai);
-        assert_eq!(loaded.model_for(ProviderKind::Openai), "gpt-4o-mini");
+        assert_eq!(loaded.model_for(ProviderKind::Openai), "gpt-6.1-sol");
         assert_eq!(loaded.input_height, default_input_height());
         let _ = std::fs::remove_dir_all(dir);
     }

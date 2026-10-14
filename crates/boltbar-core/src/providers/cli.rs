@@ -2,7 +2,7 @@ use crate::attachments::prompt_suffix_for_text_files;
 use crate::error::{BoltError, Result};
 use crate::types::{ChatRequest, ProviderKind, ResolvedAuth, Role, StreamEvent};
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -19,6 +19,9 @@ pub async fn stream_cli(
         return Err(BoltError::auth("CLI transport requires a CLI credential"));
     };
 
+    if req.attachments.iter().any(|a| crate::attachments::is_image(&a.mime)) {
+        return Err(BoltError::msg("Image attachments require an API key transport; this CLI transport supports text files only."));
+    }
     let prompt = build_prompt(req);
     let mut cmd = Command::new(program);
     cmd.kill_on_drop(true)
@@ -34,14 +37,17 @@ pub async fn stream_cli(
                 "--skip-git-repo-check",
                 "-s",
                 "read-only",
+                "-c",
+                &format!("model_reasoning_effort=\"{}\"", req.effort.as_str()),
                 "-m",
                 &req.model,
                 "-",
             ]);
         }
         ProviderKind::Anthropic => {
-            cmd.args(["-p", "--output-format", "stream-json"]);
-            cmd.arg(&prompt);
+            cmd.args(["-p", "--verbose", "--include-partial-messages", "--output-format", "stream-json",
+                "--model", &req.model, "--effort", req.effort.as_str(), "--tools", ""]);
+            cmd.arg("--").arg(&prompt);
         }
         ProviderKind::Cursor => {
             cmd.args([
@@ -49,6 +55,8 @@ pub async fn stream_cli(
                 "--output-format",
                 "stream-json",
                 "--stream-partial-output",
+                "--mode",
+                "ask",
                 "--model",
                 &req.model,
             ]);
@@ -63,6 +71,7 @@ pub async fn stream_cli(
         cmd.env(k, v);
     }
 
+    if req.provider != ProviderKind::Openai { cmd.stdin(Stdio::null()); }
     let mut child = cmd.spawn().map_err(|e| {
         BoltError::msg(format!(
             "failed to start {program}: {e}. Is the official CLI installed and on PATH?"
@@ -77,12 +86,27 @@ pub async fn stream_cli(
         }
     }
 
+    // Drain concurrently: a full stderr pipe otherwise deadlocks the child.
+    let stderr = child.stderr.take();
+    let stderr_task = tokio::spawn(async move {
+        let mut saved = Vec::new();
+        if let Some(mut stderr) = stderr {
+            let mut buffer = [0u8; 4096];
+            while let Ok(n) = stderr.read(&mut buffer).await {
+                if n == 0 { break; }
+                let room = 8192usize.saturating_sub(saved.len());
+                saved.extend_from_slice(&buffer[..n.min(room)]);
+            }
+        }
+        String::from_utf8_lossy(&saved).into_owned()
+    });
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| BoltError::msg("CLI produced no stdout"))?;
     let mut lines = BufReader::new(stdout).lines();
     let mut emitted = 0usize;
+    let mut saw_partial = false;
 
     loop {
         tokio::select! {
@@ -95,6 +119,13 @@ pub async fn stream_cli(
                 if line.trim().is_empty() {
                     continue;
                 }
+                let value: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+                let kind = value["type"].as_str().unwrap_or("");
+                if kind == "stream_event" || kind == "content_block_delta" { saw_partial = true; }
+                if saw_partial && kind == "assistant" { continue; }
+                if kind == "result" && value["is_error"].as_bool() == Some(true) {
+                    return Err(BoltError::msg("CLI reported an error. Check its login and model availability."));
+                }
                 for text in parse_cli_line(req.provider, &line) {
                     emitted += text.len();
                     let _ = tx.send(StreamEvent::Delta { text }).await;
@@ -104,19 +135,11 @@ pub async fn stream_cli(
     }
 
     let status = child.wait().await?;
-    if !status.success() && emitted == 0 {
-        let mut err = String::new();
-        if let Some(stderr) = child.stderr.take() {
-            let mut reader = BufReader::new(stderr);
-            let mut buf = String::new();
-            let _ = reader.read_line(&mut buf).await;
-            err = buf;
-        }
-        return Err(BoltError::msg(format!(
-            "{} exited with status {status}: {err}",
-            program
-        )));
+    let err = stderr_task.await.unwrap_or_default();
+    if !status.success() {
+        return Err(BoltError::msg(format!("CLI exited with {status}: {}", err.trim())));
     }
+    if emitted == 0 { return Err(BoltError::msg("CLI completed without a text response")); }
     let _ = tx.send(StreamEvent::Done).await;
     Ok(())
 }
@@ -185,6 +208,10 @@ pub fn parse_codex_line(line: &str) -> Option<String> {
 pub fn parse_claude_line(line: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
     let kind = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    if kind == "stream_event" {
+        return value.pointer("/event/delta/text").and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty()).map(str::to_owned);
+    }
     if kind == "content_block_delta" {
         return value
             .pointer("/delta/text")
@@ -227,6 +254,11 @@ pub fn parse_cursor_line(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_actual_claude_partial_envelope() {
+        assert_eq!(parse_claude_line(r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"café"}}}"#).as_deref(), Some("café"));
+    }
 
     #[test]
     fn parses_codex_agent_message() {

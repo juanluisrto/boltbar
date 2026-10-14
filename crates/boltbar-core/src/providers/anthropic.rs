@@ -134,8 +134,7 @@ pub async fn stream_messages(
             return Err(BoltError::Cancelled);
         }
         let chunk = chunk?;
-        let text = String::from_utf8_lossy(&chunk);
-        for ev in parser.push(&text) {
+        for ev in parser.push_bytes(&chunk) {
             if ev.event == "message_stop" {
                 let _ = tx.send(StreamEvent::Done).await;
                 return Ok(());
