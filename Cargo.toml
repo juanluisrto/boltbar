@@ -28,3 +28,9 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# macOS 27 dyld rejects LINKEDIT alignment produced by stripping proc-macros.
+# Keep host build tools loadable; the delivered executable remains stripped.
+# https://github.com/rust-lang/rust/issues/157750
+[profile.release.build-override]
+strip = "none"
