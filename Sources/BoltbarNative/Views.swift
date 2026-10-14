@@ -55,16 +55,56 @@ struct AttachmentStrip: View {
 
 struct MessageRow: View {
     let message: Message
+    @State private var hovering = false
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
-                .font(.system(size: 9, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+            HStack {
+                Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
+                    .font(.system(size: 9, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                Spacer()
+                if message.role == .assistant, !message.text.isEmpty {
+                    CopyIconButton(text: message.text, label: "Copy response", visible: hovering)
+                }
+            }.frame(height: 22)
             if !message.attachments.isEmpty { AttachmentStrip(items: message.attachments) }
             if !message.text.isEmpty { MarkdownText(source: message.text) }
             else if message.pending {
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Thinking…").font(.system(size: 13)).foregroundStyle(.secondary) }
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(message.activity ?? "Thinking…").font(.system(size: 13)).foregroundStyle(.secondary) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+            .contentShape(Rectangle()).onHover { hovering = $0 }
+    }
+}
+
+/// Keep the hit target and layout stable while revealing the action on hover
+/// or keyboard focus. Copy the original Markdown, including links and fences.
+struct CopyIconButton: View {
+    let text: String
+    let label: String
+    var visible = true
+    @State private var copied = false
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            copied = NSPasteboard.general.setString(text, forType: .string)
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(copied ? accent : .secondary)
+                .frame(width: 24, height: 22)
+                .background(.white.opacity(hovering || focused ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 5))
+        }.buttonStyle(.plain).focused($focused)
+            .opacity(visible || focused || copied ? 1 : 0)
+            .onHover { hovering = $0 }
+            .help(copied ? "Copied" : label)
+            .accessibilityLabel(copied ? "Copied" : label)
+            .accessibilityHidden(false)
+            .task(id: copied) {
+                guard copied else { return }
+                do { try await Task.sleep(nanoseconds: 1_500_000_000); copied = false } catch { }
+            }
     }
 }
 
@@ -122,7 +162,16 @@ struct ChatBar: View {
                     .popover(isPresented: $showModels, arrowEdge: .top) { ModelPopover(model: model, close: { showModels = false }) }
                 Button { showModels = false; model.showHistory() } label: {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 14)).foregroundStyle(.secondary).frame(width: 30, height: 30)
-                }.buttonStyle(.plain).help("Previous chats").accessibilityLabel("Previous chats")
+                }.buttonStyle(.plain).help("Previous chats (→ when the message is empty)").accessibilityLabel("Previous chats")
+                Button { model.webSearch.toggle() } label: {
+                    Image(systemName: "globe").font(.system(size: 15))
+                        .foregroundStyle(model.webSearchActive ? accent : .secondary)
+                        .frame(width: 30, height: 30)
+                        .background(model.webSearchActive ? accent.opacity(0.12) : .clear, in: Circle())
+                }.buttonStyle(.plain).disabled(!model.canSearchWeb || model.streaming)
+                    .accessibilityLabel("Search the web")
+                    .accessibilityValue(model.webSearchActive ? "On" : "Off")
+                    .help(model.canSearchWeb ? (model.webSearch ? "Web search on · click to turn off" : "Search the web · remembers your choice") : "Web search requires OpenAI with an API key")
                 PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
                 Button { if model.streaming { model.stop() } else { model.send() } } label: {
                     Image(systemName: model.streaming ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold))
@@ -227,7 +276,7 @@ struct MarkdownText: View {
             ForEach(Array(Self.blocks(source).enumerated()), id: \.offset) { _, block in
                 if block.code {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text(block.language.isEmpty ? "Code" : block.language).foregroundStyle(.secondary); Spacer(); Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(block.text, forType: .string) }.buttonStyle(.borderless) }.font(.system(size: 10))
+                        HStack { Text(block.language.isEmpty ? "Code" : block.language).foregroundStyle(.secondary); Spacer(); CopyIconButton(text: block.text, label: "Copy code") }.font(.system(size: 10))
                         ScrollView(.horizontal) { Text(Self.highlighted(block.text)).textSelection(.enabled).fixedSize(horizontal: true, vertical: false) }
                     }.padding(10).background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
                 } else {
@@ -238,7 +287,7 @@ struct MarkdownText: View {
                     }
                 }
             }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(maxWidth: .infinity, alignment: .leading).tint(accent)
     }
 }
 

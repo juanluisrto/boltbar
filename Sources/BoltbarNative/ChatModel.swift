@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor final class ChatModel: ObservableObject {
-    typealias Streamer = (ChatRequest, @escaping (String) async -> Void) async throws -> Void
+    typealias Streamer = (ChatRequest, @escaping (StreamUpdate) async -> Void) async throws -> Void
     @Published var preferences: Preferences { didSet { persist() } }
     @Published var catalogs: [Provider: Catalog] = [:]
     @Published var draft = ""
@@ -19,6 +19,7 @@ import SwiftUI
     @Published var threadHeight: CGFloat = 44
     @Published var manualThreadHeight: CGFloat?
     @Published var streaming = false
+    @Published var webSearch = false { didSet { defaults.set(webSearch, forKey: "webSearchEnabled") } }
     @Published var error: String?
     @Published var refreshing = false
     var resize: ((NSSize) -> Void)?
@@ -43,6 +44,7 @@ import SwiftUI
         self.historyStore = historyStore
         self.history = historyStore?.summaries ?? []
         self.streamer = streamer
+        self.webSearch = defaults.bool(forKey: "webSearchEnabled")
         preferences = defaults.data(forKey: "preferences").flatMap { try? JSONDecoder().decode(Preferences.self, from: $0) } ?? Preferences()
         for provider in Provider.allCases {
             if !provider.accepts(preferences.model(provider)) { preferences.models[provider.rawValue] = provider.defaults[0] }
@@ -60,6 +62,8 @@ import SwiftUI
     }
     var provider: Provider { preferences.provider }
     var model: String { preferences.model(provider) }
+    var canSearchWeb: Bool { provider == .openai && preferences.transport(provider) != .cli }
+    var webSearchActive: Bool { webSearch && canSearchWeb }
     var historyHeight: CGFloat { manualHistoryHeight ?? min(308, max(88, CGFloat(history.count) * 44)) }
     func showHistory() { saveConversation(); showingHistory = true }
     func closeHistory() { showingHistory = false }
@@ -148,18 +152,19 @@ import SwiftUI
         messages.append(Message(role: .user, text: text, attachments: attachments))
         draft = ""; attachments = []; inputHeight = 26; manualInputHeight = 26
         begin(ChatRequest(provider: provider, model: model, effort: preferences.effort,
-            transport: preferences.transport(provider), messages: messages))
+            transport: preferences.transport(provider), messages: messages, webSearch: webSearch && canSearchWeb))
     }
     func retry() {
         guard !streaming, let previous = lastRequest else { return }
         messages = previous.messages
         begin(ChatRequest(provider: provider, model: model, effort: preferences.effort,
-            transport: preferences.transport(provider), messages: messages))
+            transport: preferences.transport(provider), messages: messages, webSearch: previous.webSearch && canSearchWeb))
     }
     private func begin(_ request: ChatRequest) {
         error = nil; streaming = true; generation = UUID(); let current = generation
         lastRequest = request
-        let assistant = Message(role: .assistant, text: "", pending: true, author: request.provider.title)
+        let assistant = Message(role: .assistant, text: "", pending: true, author: request.provider.title,
+            activity: request.webSearch ? "Searching the web…" : nil)
         messages.append(assistant)
         saveConversation()
         let streamer = self.streamer
@@ -167,11 +172,16 @@ import SwiftUI
             let start = ProcessInfo.processInfo.systemUptime
             var first: Double?; var count = 0
             do {
-                try await streamer(request) { [weak self] text in
+                try await streamer(request) { [weak self] update in
                     guard let self, self.generation == current,
                           let index = self.messages.firstIndex(where: { $0.id == assistant.id }) else { return }
-                    if first == nil { first = (ProcessInfo.processInfo.systemUptime - start) * 1000 }
-                    count += 1; self.messages[index].text += text
+                    switch update {
+                    case .text(let text):
+                        if first == nil { first = (ProcessInfo.processInfo.systemUptime - start) * 1000 }
+                        count += 1; self.messages[index].text += text
+                    case .replaceText(let text): self.messages[index].text = text
+                    case .activity(let activity): self.messages[index].activity = activity
+                    }
                 }
                 metric(["kind": "stream", "provider": request.provider.rawValue, "model": request.model,
                     "ttft_ms": first ?? -1, "total_ms": (ProcessInfo.processInfo.systemUptime - start) * 1000, "deltas": count])

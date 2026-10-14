@@ -19,7 +19,7 @@ final class ChatTests: XCTestCase {
     }
     @MainActor func testSendMovesAttachmentsIntoHistoryAndResetsEditor() async throws {
         let completed = expectation(description: "request completed")
-        let model = ChatModel(defaults: UserDefaults(suiteName: "com.boltbar.tests.memory")!, streamer: { _, delta in await delta("OK"); completed.fulfill() })
+        let model = ChatModel(defaults: UserDefaults(suiteName: "com.boltbar.tests.memory")!, streamer: { _, delta in await delta(.text("OK")); completed.fulfill() })
         let image = try Attachment(name: "image.png", mime: "image/png", data: Data([1]))
         model.attachments = [image]; model.draft = "Describe"; model.inputHeight = 160
         model.send()
@@ -32,13 +32,13 @@ final class ChatTests: XCTestCase {
     }
     @MainActor func testResetRejectsLateFragmentsFromPreviousRequest() async throws {
         let started = expectation(description: "request started")
-        var lateDelta: ((String) async -> Void)?
+        var lateDelta: ((StreamUpdate) async -> Void)?
         let model = ChatModel(defaults: UserDefaults(suiteName: "com.boltbar.tests.memory")!, streamer: { _, delta in
             lateDelta = delta; started.fulfill(); try await Task.sleep(nanoseconds: 5_000_000_000)
         })
         model.draft = "Old chat"; model.send()
         await fulfillment(of: [started], timeout: 2)
-        model.reset(); await lateDelta?("stale response")
+        model.reset(); await lateDelta?(.text("stale response"))
         XCTAssertTrue(model.messages.isEmpty); XCTAssertFalse(model.streaming)
     }
     func testEditorStartsAtOneLineAndCapsGrowth() {

@@ -45,7 +45,7 @@ final class HistoryTests: XCTestCase {
     @MainActor func testNewChatAndRestartKeepHistoryAndResumeTheSameConversation() async throws {
         let store = try store()
         let defaults = UserDefaults(suiteName: "com.boltbar.tests.history")!
-        let model = ChatModel(defaults: defaults, historyStore: store, streamer: { _, delta in await delta("First answer") })
+        let model = ChatModel(defaults: defaults, historyStore: store, streamer: { _, delta in await delta(.text("First answer")) })
         let attachment = try Attachment(name: "note.txt", mime: "text/plain", data: Data("ZAFIRO".utf8))
         model.draft = "First chat"; model.attachments = [attachment]; model.send()
         while model.streaming { await Task.yield() }
@@ -63,7 +63,7 @@ final class HistoryTests: XCTestCase {
         model.finish()
         let restarted = ChatModel(defaults: defaults, historyStore: try ConversationStore(directory: store.directory), streamer: { request, delta in
             XCTAssertEqual(request.messages[0].attachments.first?.data, attachment.data)
-            await delta("Second answer")
+            await delta(.text("Second answer"))
         })
         let opened = await restarted.openConversation(id)
         XCTAssertTrue(opened); XCTAssertEqual(restarted.messages.count, 2)
@@ -77,10 +77,10 @@ final class HistoryTests: XCTestCase {
     }
     @MainActor func testLateStreamCannotOverwriteAnOpenedHistoryItem() async throws {
         let store = try store(), defaults = UserDefaults(suiteName: "com.boltbar.tests.history")!
-        var lateDelta: ((String) async -> Void)?
+        var lateDelta: ((StreamUpdate) async -> Void)?
         let started = expectation(description: "second stream")
         let model = ChatModel(defaults: defaults, historyStore: store, streamer: { request, delta in
-            if request.messages.first?.text == "Saved" { await delta("Saved reply") }
+            if request.messages.first?.text == "Saved" { await delta(.text("Saved reply")) }
             else { lateDelta = delta; started.fulfill(); try await Task.sleep(nanoseconds: 5_000_000_000) }
         })
         model.draft = "Saved"; model.send(); while model.streaming { await Task.yield() }
@@ -88,7 +88,7 @@ final class HistoryTests: XCTestCase {
         model.reset(); model.draft = "Still streaming"; model.send()
         await fulfillment(of: [started], timeout: 2)
         let opened = await model.openConversation(id)
-        XCTAssertTrue(opened); await lateDelta?("Wrong conversation")
+        XCTAssertTrue(opened); await lateDelta?(.text("Wrong conversation"))
         XCTAssertEqual(model.messages.last?.text, "Saved reply")
         XCTAssertEqual(model.history.count, 2); model.finish()
     }

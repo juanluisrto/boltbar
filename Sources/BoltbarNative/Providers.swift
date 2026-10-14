@@ -58,19 +58,28 @@ enum Providers {
             return ["role": message.role.rawValue, "content": parts]
         }
         if request.provider == .openai {
-            return ["model": request.model, "stream": true, "reasoning": ["effort": request.effort.rawValue], "input": messages]
+            var body: [String: Any] = ["model": request.model, "stream": true, "reasoning": ["effort": request.effort.rawValue], "input": messages]
+            if request.webSearch {
+                body["tools"] = [["type": "web_search"]]
+                body["tool_choice"] = "required"
+            }
+            return body
         }
         return ["model": request.model, "stream": true, "max_tokens": 8192,
             "thinking": ["type": "adaptive"], "output_config": ["effort": request.effort.rawValue], "messages": messages]
     }
 
-    static func stream(_ request: ChatRequest, delta: @escaping (String) async -> Void) async throws {
+    static func stream(_ request: ChatRequest, update: @escaping (StreamUpdate) async -> Void) async throws {
+        if request.webSearch && (request.provider != .openai || request.transport == .cli) {
+            throw AppError("Web search needs OpenAI with an API key. Select OpenAI and API key or Automatic in Settings.")
+        }
         if request.transport == .cli || request.provider == .cursor {
-            try await CLI.stream(request, delta: delta); return
+            try await CLI.stream(request) { await update(.text($0)) }; return
         }
         let key = try Keychain.key(request.provider)
         if request.transport == .automatic && key == nil {
-            try await CLI.stream(request, delta: delta)
+            guard !request.webSearch else { throw AppError("Add an OpenAI API key in Settings to search the web.") }
+            try await CLI.stream(request) { await update(.text($0)) }
             return
         }
         guard request.provider != .cursor else { throw AppError("Cursor chat uses its official CLI. Run agent login and select CLI login.") }
@@ -93,15 +102,17 @@ enum Providers {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         metric(["kind": "headers", "provider": request.provider.rawValue, "status": status])
         guard (200..<300).contains(status) else { throw AppError("\(request.provider.title) returned HTTP \(status). Check the key, model access, and quota in Settings.") }
-        var frames = EventFrames()
+        var frames = EventFrames(), openAI = OpenAITextStream()
         for try await byte in bytes {
             try Task.checkCancellation()
             guard let data = try frames.consume(byte: byte) else { continue }
             guard let json = data.data(using: .utf8), let event = try JSONSerialization.jsonObject(with: json) as? [String: Any] else { continue }
             let type = event["type"] as? String ?? ""
-            if ["response.completed", "message_stop"].contains(type) { return }
             if ["error", "response.failed", "response.incomplete"].contains(type) { throw AppError("The provider did not complete the response. You can retry this message.") }
-            if let text = textDelta(event), !text.isEmpty { await delta(text) }
+            if request.provider == .openai {
+                for item in openAI.consume(event) { await update(item) }
+            } else if let text = textDelta(event), !text.isEmpty { await update(.text(text)) }
+            if ["response.completed", "message_stop"].contains(type) { return }
         }
         throw AppError("The connection ended before the response completed.")
     }

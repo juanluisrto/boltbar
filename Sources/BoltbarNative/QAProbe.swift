@@ -9,19 +9,25 @@ enum QAProbe {
         let model = args.count > 3 ? args[3] : provider.defaults[0]
         let files = Array(args.dropFirst(min(4, args.count)))
         let start = ProcessInfo.processInfo.systemUptime
-        var first: Double?, count = 0, text = ""
+        var first: Double?, count = 0, text = "", searches = 0
+        let webSearch = ProcessInfo.processInfo.environment["BOLTBAR_QA_WEB"] == "1"
         do {
             let attachments = try files.map { try Attachment(url: URL(fileURLWithPath: $0)) }
-            let prompt = attachments.isEmpty ? "Print the integers 1 through 40, separated by spaces. No other text." : "Briefly describe the attached icon and state the document's control word. Answer in English."
+            let prompt = webSearch ? "Search the web for the official Swift download page. Give its title and one sentence describing it, with a source citation." : attachments.isEmpty ? "Print the integers 1 through 40, separated by spaces. No other text." : "Briefly describe the attached icon and state the document's control word. Answer in English."
             let request = ChatRequest(provider: provider, model: model, effort: .low,
                 transport: ProcessInfo.processInfo.environment["BOLTBAR_QA_TRANSPORT"] == "cli" ? .cli : .automatic,
-                messages: [Message(role: .user, text: prompt, attachments: attachments)])
+                messages: [Message(role: .user, text: prompt, attachments: attachments)], webSearch: webSearch)
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    try await Providers.stream(request) { delta in
+                    try await Providers.stream(request) { update in
                         await MainActor.run {
-                            if first == nil { first = (ProcessInfo.processInfo.systemUptime - start) * 1000 }
-                            count += 1; text += delta
+                            switch update {
+                            case .text(let delta):
+                                if first == nil { first = (ProcessInfo.processInfo.systemUptime - start) * 1000 }
+                                count += 1; text += delta
+                            case .replaceText(let value): text = value
+                            case .activity(let status): if status == "Searching the web…" { searches += 1 }
+                            }
                         }
                     }
                 }
@@ -32,6 +38,7 @@ enum QAProbe {
             var result: [String: Any] = ["provider": provider.rawValue, "model": model, "completed": true, "deltas": count,
                 "ttft_ms": first ?? -1, "total_ms": (ProcessInfo.processInfo.systemUptime - start) * 1000]
             if !attachments.isEmpty { result["synthetic_response"] = text; result["control_word_found"] = text.uppercased().contains("ZAFIRO") }
+            if webSearch { result["search_events"] = searches; result["synthetic_response"] = text }
             print(String(data: try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), encoding: .utf8)!); fflush(stdout); exit(0)
         } catch {
             print("QA probe failed: \(error.localizedDescription)"); fflush(stdout); exit(1)

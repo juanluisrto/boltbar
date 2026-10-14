@@ -82,6 +82,7 @@ struct Message: Identifiable, Codable {
     var attachments: [Attachment] = []
     var pending = false
     var author: String? = nil
+    var activity: String? = nil
 }
 struct ChatRequest {
     let provider: Provider
@@ -89,6 +90,7 @@ struct ChatRequest {
     let effort: Effort
     let transport: Transport
     let messages: [Message]
+    var webSearch = false
 }
 struct AppError: LocalizedError {
     let message: String
