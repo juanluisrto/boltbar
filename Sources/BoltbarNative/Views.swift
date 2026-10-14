@@ -71,10 +71,12 @@ struct MessageRow: View {
 struct ChatBar: View {
     @ObservedObject var model: ChatModel
     @State private var showModels = false
-    @State private var showHistory = false
     var body: some View {
         VStack(spacing: 10) {
             PanelMoveArea().frame(height: 12)
+            if model.showingHistory {
+                HistoryPane(model: model, close: { model.closeHistory() })
+            } else {
             if !model.messages.isEmpty {
                 ScrollViewReader { reader in
                     ScrollView {
@@ -95,7 +97,7 @@ struct ChatBar: View {
             }
             ZStack(alignment: .topLeading) {
                 if model.draft.isEmpty { Text("Ask anything…").font(.system(size: 15)).foregroundStyle(.gray).padding(.top, 2).allowsHitTesting(false) }
-                GrowingEditor(model: model)
+                GrowingEditor(model: model).onAppear { DispatchQueue.main.async { model.focusComposer?() } }
             }.frame(height: model.inputHeight)
             if let error = model.error {
                 HStack(alignment: .top, spacing: 8) {
@@ -105,31 +107,31 @@ struct ChatBar: View {
                     Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
                 }
             }
-            if let error = model.historyError {
-                Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            }
             HStack(spacing: 9) {
                 Button { model.pickFiles() } label: { Image(systemName: "plus").font(.system(size: 16, weight: .medium)).frame(width: 30, height: 30).background(.white.opacity(0.07), in: Circle()) }
                     .buttonStyle(.plain).accessibilityLabel("Attach files")
                 Button { showModels.toggle() } label: {
-                    HStack(spacing: 6) {
-                        Text(model.preferences.effort.title).frame(width: 47, alignment: .leading)
-                        Text("·").foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
                         Text(modelTitle(model.model)).lineLimit(1)
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium))
+                        EffortGauge(effort: model.preferences.effort).frame(width: 18, height: 16).accessibilityHidden(true)
                     }
                         .font(.system(size: 12, weight: .medium)).padding(.horizontal, 11).frame(height: 29).background(.white.opacity(0.07), in: Capsule())
                 }.buttonStyle(.plain).accessibilityLabel("Effort and model")
+                    .accessibilityValue("\(modelTitle(model.model)), \(model.preferences.effort.title) effort")
+                    .help("\(model.preferences.effort.title) effort")
                     .popover(isPresented: $showModels, arrowEdge: .top) { ModelPopover(model: model, close: { showModels = false }) }
-                PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
-                Button { model.saveConversation(); showHistory.toggle() } label: {
+                Button { showModels = false; model.showHistory() } label: {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 14)).foregroundStyle(.secondary).frame(width: 30, height: 30)
                 }.buttonStyle(.plain).help("Previous chats").accessibilityLabel("Previous chats")
-                    .popover(isPresented: $showHistory, arrowEdge: .top) { HistoryPopover(model: model, close: { showHistory = false }) }
+                PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
                 Button { if model.streaming { model.stop() } else { model.send() } } label: {
                     Image(systemName: model.streaming ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold))
                         .frame(width: 31, height: 31).background(accent, in: Circle()).foregroundStyle(.black)
                 }.buttonStyle(.plain).accessibilityLabel(model.streaming ? "Stop" : "Send")
+            }
+            }
+            if let error = model.historyError {
+                Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 16).padding(.top, 9).padding(.bottom, 14)
@@ -139,6 +141,24 @@ struct ChatBar: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { Color.clear.preference(key: SizeKey.self, value: $0.size) })
         .onPreferenceChange(SizeKey.self) { model.resize?($0) }
+    }
+}
+
+struct EffortGauge: View {
+    let effort: Effort
+    private var angle: Double { switch effort { case .low: return -150; case .medium: return -90; case .high: return -30 } }
+    var body: some View {
+        ZStack {
+            Path { path in
+                path.addArc(center: CGPoint(x: 9, y: 12), radius: 7.5, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+            }.stroke(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
+            Path { path in
+                path.move(to: CGPoint(x: 9, y: 12))
+                let radians = angle * .pi / 180
+                path.addLine(to: CGPoint(x: 9 + cos(radians) * 6, y: 12 + sin(radians) * 6))
+            }.stroke(accent, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+            Circle().fill(accent).frame(width: 3, height: 3).position(x: 9, y: 12)
+        }
     }
 }
 

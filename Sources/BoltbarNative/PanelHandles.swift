@@ -94,15 +94,17 @@ struct PanelResizeArea: NSViewRepresentable {
             let input = model.inputHeight
             let thread = model.manualThreadHeight ?? min(330, max(44, model.threadHeight))
             let hasMessages = !model.messages.isEmpty
+            let history = model.showingHistory
             let available = view?.window?.screen?.visibleFrame.size ?? NSSize(width: 1200, height: 800)
-            let chrome = start.height - (hasMessages ? thread : input)
+            let chrome = start.height - (history ? model.historyHeight : hasMessages ? thread : input)
             return { delta in
                 let frame = region.frame(from: start, delta: delta,
-                    minimum: NSSize(width: 420, height: chrome + (hasMessages ? 44 : 26)),
+                    minimum: NSSize(width: 420, height: chrome + (history ? 88 : hasMessages ? 44 : 26)),
                     maximum: NSSize(width: available.width - 20, height: available.height - 20))
                 if frame.size != view?.window?.frame.size { model.resizeOrigin = frame.origin }
                 model.panelWidth = frame.width
-                if hasMessages { model.manualThreadHeight = frame.height - chrome }
+                if history { model.manualHistoryHeight = frame.height - chrome }
+                else if hasMessages { model.manualThreadHeight = frame.height - chrome }
                 else {
                     model.manualInputHeight = frame.height - chrome
                     model.inputHeight = model.manualInputHeight

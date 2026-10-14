@@ -1,28 +1,30 @@
 import AppKit
 import SwiftUI
 
-struct HistoryPopover: View {
+struct HistoryPane: View {
     @ObservedObject var model: ChatModel
     let close: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
+                Button(action: close) { Image(systemName: "chevron.left").frame(width: 24, height: 24) }
+                    .buttonStyle(.plain).accessibilityLabel("Back to chat")
                 Text("Previous chats").font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Button("New chat") { close(); model.newConversation?() }.buttonStyle(.borderless)
             }
             if model.history.isEmpty {
                 Text("Your conversations will appear here after you send a message.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).padding(.vertical, 20)
+                    .font(.system(size: 12)).foregroundStyle(.secondary).frame(height: model.historyHeight)
             } else {
                 HistoryTable(items: model.history, open: { id in
                     Task { if await model.openConversation(id) { close(); model.focusComposer?() } }
                 }, close: close)
-                .frame(height: min(308, CGFloat(model.history.count) * 44))
+                .frame(height: model.historyHeight)
                 .disabled(model.openingConversation)
                 Text("↑ ↓ to select · Return to open").font(.system(size: 10)).foregroundStyle(.secondary)
             }
-        }.padding(16).frame(width: 400).background(Color(white: 0.12)).preferredColorScheme(.dark)
+        }.frame(maxWidth: .infinity, alignment: .leading).preferredColorScheme(.dark)
     }
 }
 
@@ -42,6 +44,14 @@ final class ConversationTableView: NSTableView {
     }
 }
 
+final class ConversationRowView: NSTableRowView {
+    override var isEmphasized: Bool { get { false } set {} }
+    override func drawSelection(in dirtyRect: NSRect) {
+        NSColor(white: 1, alpha: 0.09).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 2), xRadius: 8, yRadius: 8).fill()
+    }
+}
+
 struct HistoryTable: NSViewRepresentable {
     let items: [ConversationSummary]
     let open: (UUID) -> Void
@@ -50,7 +60,8 @@ struct HistoryTable: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let table = ConversationTableView()
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("conversation"))
-        column.width = 400; column.resizingMask = .autoresizingMask; table.addTableColumn(column)
+        column.width = 668; column.resizingMask = .autoresizingMask; table.addTableColumn(column)
+        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.headerView = nil; table.rowHeight = 44; table.intercellSpacing = .zero
         table.backgroundColor = .clear; table.style = .plain; table.focusRingType = .none
         table.allowsMultipleSelection = false; table.allowsEmptySelection = false
@@ -83,19 +94,23 @@ struct HistoryTable: NSViewRepresentable {
         var items: [ConversationSummary] = []
         init(parent: HistoryTable) { self.parent = parent }
         func numberOfRows(in tableView: NSTableView) -> Int { parent.items.count }
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { ConversationRowView() }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             let item = parent.items[row]
             let cell = NSTableCellView()
             let dateText = ConversationDate.label(item.updatedAt)
             let title = NSButton(title: item.title, target: self, action: #selector(openButton(_:)))
             title.tag = row; title.isBordered = false; title.alignment = .left
+            title.contentTintColor = .labelColor
             title.setAccessibilityLabel("\(item.title), \(dateText)")
             let date = NSTextField(labelWithString: dateText)
             title.font = .systemFont(ofSize: 12, weight: .medium); title.lineBreakMode = .byTruncatingTail
             title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            title.setContentHuggingPriority(.defaultLow, for: .horizontal)
             date.font = .systemFont(ofSize: 11); date.textColor = .secondaryLabelColor
             date.setContentCompressionResistancePriority(.required, for: .horizontal)
-            let rowView = NSStackView(views: [title, date]); rowView.orientation = .horizontal; rowView.spacing = 12
+            date.setContentHuggingPriority(.required, for: .horizontal)
+            let rowView = NSStackView(views: [title, date]); rowView.orientation = .horizontal; rowView.spacing = 12; rowView.distribution = .fill
             rowView.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(rowView)
             NSLayoutConstraint.activate([rowView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
                 rowView.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8), rowView.centerYAnchor.constraint(equalTo: cell.centerYAnchor)])

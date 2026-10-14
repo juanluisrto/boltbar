@@ -51,7 +51,13 @@ final class HistoryTests: XCTestCase {
         while model.streaming { await Task.yield() }
         let id = try XCTUnwrap(model.history.first?.id)
         let firstDate = model.history.first?.updatedAt
+        model.draft = "Unsent draft"; model.showHistory()
+        XCTAssertTrue(model.showingHistory)
+        model.closeHistory()
+        XCTAssertEqual(model.draft, "Unsent draft")
+        model.showHistory()
         model.reset()
+        XCTAssertFalse(model.showingHistory)
         XCTAssertTrue(model.messages.isEmpty); XCTAssertEqual(model.history.count, 1)
         XCTAssertEqual(model.history.first?.updatedAt, firstDate)
         model.finish()

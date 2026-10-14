@@ -11,6 +11,8 @@ import SwiftUI
     @Published var history: [ConversationSummary] = []
     @Published var historyError: String?
     @Published var openingConversation = false
+    @Published var showingHistory = false
+    @Published var manualHistoryHeight: CGFloat?
     @Published var inputHeight: CGFloat = 26
     @Published var manualInputHeight: CGFloat = 26
     @Published var panelWidth: CGFloat = 700
@@ -57,6 +59,9 @@ import SwiftUI
     }
     var provider: Provider { preferences.provider }
     var model: String { preferences.model(provider) }
+    var historyHeight: CGFloat { manualHistoryHeight ?? min(308, max(88, CGFloat(history.count) * 44)) }
+    func showHistory() { saveConversation(); showingHistory = true }
+    func closeHistory() { showingHistory = false }
     func persist() { if let data = try? JSONEncoder().encode(preferences) { defaults.set(data, forKey: "preferences") } }
     func refresh() async {
         guard !refreshing else { return }; refreshing = true
@@ -88,6 +93,7 @@ import SwiftUI
         inputHeight = 26; manualInputHeight = 26; lastRequest = nil
         manualThreadHeight = nil; threadHeight = 44
         resizeOrigin = nil
+        showingHistory = false; manualHistoryHeight = nil
         conversationID = UUID(); conversationCreated = Date(); conversationDirty = false
     }
     func stop() {
@@ -127,6 +133,7 @@ import SwiftUI
             draft = ""; attachments = []; error = nil; lastRequest = nil
             inputHeight = 26; manualInputHeight = 26; manualThreadHeight = nil; threadHeight = 44
             conversationDirty = false
+            showingHistory = false
             return true
         } catch { historyError = "Could not open this conversation: \(error.localizedDescription)"; return false }
     }
