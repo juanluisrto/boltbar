@@ -72,7 +72,7 @@ enum Providers {
         if request.webSearch && (request.provider != .openai || request.transport == .cli) {
             throw AppError("Web search needs OpenAI with an API key. Select OpenAI and API key or Automatic in Settings.")
         }
-        if request.transport == .cli || request.provider == .cursor {
+        if request.transport == .cli {
             try await CLI.stream(request) { await update(.text($0)) }; return
         }
         let key = try Keychain.key(request.provider)
@@ -81,7 +81,6 @@ enum Providers {
             try await CLI.stream(request) { await update(.text($0)) }
             return
         }
-        guard request.provider != .cursor else { throw AppError("Cursor chat uses its official CLI. Run agent login and select CLI login.") }
         guard let key, !key.isEmpty else { throw AppError("Add an API key in Settings or choose an existing CLI login.") }
         let address = request.provider == .openai ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages"
         var http = URLRequest(url: URL(string: address)!)
@@ -129,7 +128,7 @@ enum Providers {
 
     static func catalog(_ provider: Provider, transport: Transport) async -> Catalog {
         do {
-            if transport != .cli, provider != .cursor, let key = try Keychain.key(provider) {
+            if transport != .cli, let key = try Keychain.key(provider) {
                 let url = provider == .openai ? "https://api.openai.com/v1/models" : "https://api.anthropic.com/v1/models"
                 var request = URLRequest(url: URL(string: url)!); request.timeoutInterval = 10
                 if provider == .openai { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
@@ -150,18 +149,10 @@ enum Providers {
             }
             guard transport != .api else { throw AppError("Add an API key in Settings.") }
             let program = try CLI.program(provider)
-            let args: [String] = provider == .openai ? ["login", "status"] : provider == .anthropic ? ["auth", "status"] : ["--list-models"]
+            let args: [String] = provider == .openai ? ["login", "status"] : ["auth", "status"]
             let output = try await CLI.capture(program, args: args)
             if provider == .anthropic, let data = output.data(using: .utf8), let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any], status["loggedIn"] as? Bool == false {
                 throw AppError("Run \(provider.loginCommand), then refresh.")
-            }
-            if provider == .cursor {
-                let models = output.split(separator: "\n").compactMap { line -> String? in
-                    let id = line.trimmingCharacters(in: .whitespaces).split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? ""
-                    return id.range(of: "^[a-z0-9][a-z0-9._-]*$", options: .regularExpression) != nil && provider.accepts(id) ? id : nil
-                }
-                guard !models.isEmpty else { throw AppError("Run agent login, then refresh.") }
-                return Catalog(models: models, detail: "Cursor CLI · live catalog", ready: true)
             }
             return Catalog(models: provider.defaults, detail: "CLI login · fallback catalog", ready: true)
         } catch {
@@ -233,7 +224,7 @@ final class LineProcess: @unchecked Sendable {
 
 enum CLI {
     static func program(_ provider: Provider) throws -> String {
-        let names = provider == .openai ? ["codex"] : provider == .anthropic ? ["claude"] : ["agent", "cursor-agent"]
+        let names = provider == .openai ? ["codex"] : ["claude"]
         let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init) + ["/opt/homebrew/bin", "/usr/local/bin", NSHomeDirectory() + "/.local/bin", NSHomeDirectory() + "/.cargo/bin"]
         for name in names { for directory in paths {
             let path = directory + "/" + name
@@ -266,8 +257,7 @@ enum CLI {
             args = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "--disable", "shell_tool", "--disable", "apps", "-c", "model_reasoning_effort=\"\(request.effort.rawValue)\"", "-m", request.model, "-"]
         case .anthropic:
             args = ["-p", "--verbose", "--include-partial-messages", "--output-format", "stream-json", "--model", request.model, "--effort", request.effort.rawValue, "--tools", ""]
-        case .cursor:
-            args = ["-p", "--output-format", "stream-json", "--stream-partial-output", "--mode", "ask", "--model", request.model]
+
         }
         return Invocation(arguments: args, input: Data(prompt.utf8))
     }

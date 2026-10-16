@@ -30,9 +30,8 @@ final class ChatPanel: NSPanel {
         panel.level = .floating; panel.hidesOnDeactivate = false; panel.isOpaque = false
         panel.backgroundColor = .clear; panel.hasShadow = true
         panel.isMovableByWindowBackground = true
-        panel.appearance = NSAppearance(named: .darkAqua)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
-        let host = DropHostingView(rootView: ChatBar(model: model))
+        let host = DropHostingView(rootView: ThemedView(model: model) { ChatBar(model: model) })
         host.registerForDraggedTypes([.fileURL, .png, .tiff]); host.accept = { [weak model] in model?.receive($0) ?? false }
         panel.contentView = host
         model.resize = { [weak self] in self?.fit($0) }
@@ -79,6 +78,7 @@ final class ChatPanel: NSPanel {
         let show = menu.addItem(withTitle: "New chat", action: #selector(self.show), keyEquivalent: ""); show.target = self
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ","); settings.target = self
         menu.addItem(.separator()); menu.addItem(withTitle: "Quit Boltbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        for item in [root, appMenu, edit, menu] { item.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular) }
         status.menu = menu
     }
     func register(_ key: UInt32, _ modifiers: UInt32) -> Bool {
@@ -156,8 +156,8 @@ final class ChatPanel: NSPanel {
         if settings == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Boltbar Settings"; window.isReleasedWhenClosed = false
-            window.minSize = NSSize(width: 520, height: 540); window.appearance = NSAppearance(named: .darkAqua)
-            window.contentView = NSHostingView(rootView: SettingsView(model: model)); window.center(); settings = window
+            window.minSize = NSSize(width: 520, height: 540)
+            window.contentView = NSHostingView(rootView: ThemedView(model: model) { SettingsView(model: model) }); window.center(); settings = window
         }
         settings?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }

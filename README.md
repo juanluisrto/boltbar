@@ -9,8 +9,10 @@ A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. Starting with
 - Paste, drop or choose images, PDFs and text documents. Sent attachments stay visible in the conversation and remain available in follow-up requests.
 - A single model chip with an effort gauge, streamed replies, selectable Markdown, aligned tables, and highlighted fenced code. Copy a whole response from its hover/focus icon, or a code block from its own copy icon.
 - Previous chats open inside the bar from the clock button or **→** in an empty composer. Start typing to filter titles and all message text locally; accents and case do not matter. Use ↑/↓ to select and **→** or Return to open. In a reopened chat, **←** with an empty composer returns to the same filter and selection. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
+- Settings → Appearance offers Paper and Mist light themes, Graphite and Midnight dark themes, System/Light/Dark mode, and a custom accent color. Interface controls use monospaced text; rendered chat content retains its reading typography.
+- Delete a history item with its hover trash button or press Delete twice; Escape or navigation cancels keyboard confirmation.
 - The globe allows web search with OpenAI API; the model decides when a search is needed and returns clickable source citations. Boltbar remembers that choice across new chats and app restarts. Search is unavailable on CLI transports and other providers; the saved choice is retained when switching back to OpenAI.
-- OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex, Claude Code or Cursor CLI sessions.
+- OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex or Claude Code CLI sessions.
 - API keys use macOS Keychain service `com.boltbar.keys`. Chats and attachments are saved locally in `~/Library/Application Support/Boltbar/Conversations`, with a private metadata index and a separate file per conversation. Keys are never included.
 
 ## Install
@@ -65,9 +67,8 @@ For subscription login, run the command shown in Settings (`codex login`, `claud
 | Anthropic API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, filtered |
 | Claude Code CLI | Partial message events | UTF-8 text | Explicit fallback catalog |
 | Codex CLI | Completed message events | UTF-8 text | Last synced API catalog or bundled defaults |
-| Cursor CLI | CLI partial output | UTF-8 text | `agent --list-models` |
 
-CLI image/PDF submissions produce an explicit error instead of silently losing files. CLI executables can maintain their own state according to their own settings. Cursor requires an authenticated official CLI; a dashboard key is not a public chat API.
+CLI image/PDF submissions produce an explicit error instead of silently losing files. CLI executables can maintain their own state according to their own settings.
 
 OpenAI discovery is an explicit product policy: only stable aliases in the Astra, Sol and Luna families are eligible, and the highest numeric version of each family is shown. Refresh runs at launch, every six hours, and on demand from Settings. A new family needs a policy change; future versions within these three families are automatic. API failures keep the last successful catalog. CLI-only users without a cached API catalog get the three bundled defaults; that is not a live availability guarantee.
 

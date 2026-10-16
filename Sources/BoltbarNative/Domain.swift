@@ -4,18 +4,27 @@ import Security
 import LocalAuthentication
 
 enum Provider: String, Codable, CaseIterable, Identifiable {
-    case openai, anthropic, cursor
+    case openai, anthropic
+    // Read legacy chats/preferences without keeping the removed integration.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        if value == "cursor" { self = .openai; return }
+        guard let provider = Self(rawValue: value) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown provider")
+        }
+        self = provider
+    }
     var id: String { rawValue }
-    var title: String { ["openai": "OpenAI", "anthropic": "Anthropic", "cursor": "Cursor"][rawValue]! }
+    var title: String { ["openai": "OpenAI", "anthropic": "Anthropic"][rawValue]! }
     var defaults: [String] {
         switch self {
         case .openai: return FeaturedModels.fallback
         case .anthropic: return ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1", "claude-haiku-5-5"]
-        case .cursor: return ["auto", "composer-2.5", "composer-2.5-fast"]
         }
     }
     var loginCommand: String {
-        switch self { case .openai: return "codex login"; case .anthropic: return "claude auth login"; case .cursor: return "agent login" }
+        switch self { case .openai: return "codex login"; case .anthropic: return "claude auth login" }
     }
     func accepts(_ model: String) -> Bool {
         let id = model.lowercased()
@@ -23,7 +32,6 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .openai: return FeaturedModels.parts(id) != nil
         case .anthropic: return id.hasPrefix("claude-") && !id.hasPrefix("claude-3")
-        case .cursor: return !id.contains("gpt-4") && !id.contains("claude-3")
         }
     }
 }

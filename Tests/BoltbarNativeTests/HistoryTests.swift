@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import SwiftUI
 @testable import BoltbarNative
 
 final class HistoryTests: XCTestCase {
@@ -16,6 +17,113 @@ final class HistoryTests: XCTestCase {
             XCTAssertEqual(column.width, scroll.contentView.bounds.width, accuracy: 0.5)
             XCTAssertEqual(table.frame.width, scroll.contentView.bounds.width, accuracy: 0.5)
             XCTAssertEqual(scroll.contentView.bounds.origin.x, 0)
+        }
+    }
+    @MainActor func testDeleteRequiresTwoPressesAndCancelsOnNavigation() {
+        _ = NSApplication.shared
+        let items = (0..<2).map { ConversationSummary(id: UUID(), title: "Chat \($0)", createdAt: Date(), updatedAt: Date()) }
+        var deleted: [UUID] = []
+        let parent = HistoryTable(items: items, query: .constant(""), selectedID: .constant(nil),
+                                  open: { _ in }, close: {}, delete: { deleted.append($0) })
+        let coordinator = parent.makeCoordinator(), table = ConversationTableView()
+        table.addTableColumn(NSTableColumn(identifier: .init("conversation")))
+        table.dataSource = coordinator; table.delegate = coordinator; coordinator.table = table
+        coordinator.reload(items)
+        coordinator.deleteSelected()
+        XCTAssertEqual(coordinator.pendingDeletionID, items[0].id); XCTAssertTrue(deleted.isEmpty)
+        table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+        XCTAssertNil(coordinator.pendingDeletionID)
+        coordinator.deleteSelected(); XCTAssertTrue(deleted.isEmpty)
+        coordinator.deleteSelected(); XCTAssertEqual(deleted, [items[1].id])
+        coordinator.deleteSelected(); XCTAssertTrue(coordinator.cancelDeletion())
+        XCTAssertNil(coordinator.pendingDeletionID)
+        var presses = 0
+        table.deleteSelection = { presses += 1 }
+        for repeating in [false, true, true] {
+            let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                        windowNumber: 0, context: nil, characters: "\u{7f}",
+                                        charactersIgnoringModifiers: "\u{7f}", isARepeat: repeating, keyCode: 51)!
+            table.keyDown(with: event)
+        }
+        XCTAssertEqual(presses, 1)
+        let cell = coordinator.tableView(table, viewFor: table.tableColumns[0], row: 0) as! ConversationCellView
+        XCTAssertTrue(cell.trash.isHidden)
+        let hover = NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [], timestamp: 0,
+                                      windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
+        cell.mouseEntered(with: hover); XCTAssertFalse(cell.trash.isHidden)
+        cell.trash.performClick(nil)
+        XCTAssertEqual(deleted, [items[1].id, items[0].id])
+        cell.mouseExited(with: hover); XCTAssertTrue(cell.trash.isHidden)
+    }
+    @MainActor func testDeletingActiveConversationPersistsAndDoesNotResurrect() async throws {
+        let store = try store()
+        let defaults = UserDefaults(suiteName: "com.boltbar.tests.delete.\(UUID())")!
+        let model = ChatModel(defaults: defaults, historyStore: store, streamer: { _, delta in await delta(.text("Answer")) })
+        model.draft = "Keep this"; model.send()
+        while model.streaming { await Task.yield() }
+        let kept = try XCTUnwrap(model.history.first?.id)
+        model.reset(); model.draft = "Delete this"; model.send()
+        while model.streaming { await Task.yield() }
+        let removed = try XCTUnwrap(model.history.first?.id)
+        _ = try await store.search("Delete")
+        model.draft = "Unsent draft"; model.showHistory(); model.selectedHistoryID = removed
+        await model.deleteConversation(removed)
+        XCTAssertEqual(model.history.map(\.id), [kept]); XCTAssertEqual(model.selectedHistoryID, kept)
+        XCTAssertTrue(model.messages.isEmpty); XCTAssertTrue(model.showingHistory)
+        XCTAssertEqual(model.draft, "Unsent draft")
+        model.finish(); model.showHistory(); model.finish()
+        let reopened = try ConversationStore(directory: store.directory)
+        XCTAssertEqual(reopened.summaries.map(\.id), [kept])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.directory.appendingPathComponent(removed.uuidString + ".json").path))
+        let matches = try await store.search("Delete")
+        XCTAssertTrue(matches.isEmpty)
+        await model.deleteConversation(kept)
+        XCTAssertTrue(model.history.isEmpty); XCTAssertNil(model.selectedHistoryID)
+    }
+    func testFailedDeleteRestoresConversationAndIndex() async throws {
+        let store = try store()
+        let summary = ConversationSummary(id: UUID(), title: "Keep on failure", createdAt: Date(), updatedAt: Date())
+        let record = Conversation(summary: summary, messages: [Message(role: .user, text: "Original")],
+                                  provider: .openai, model: "gpt-6.1-sol", effort: .low, transport: .api)
+        store.save(record) { _ in }; store.flush()
+        let index = store.directory.appendingPathComponent("index.json")
+        try FileManager.default.removeItem(at: index)
+        try FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
+        do { try await store.delete(summary.id); XCTFail("Expected index write to fail") } catch {}
+        XCTAssertEqual(store.summaries.map(\.id), [summary.id])
+        let restored = try await store.load(summary.id)
+        XCTAssertEqual(restored.messages.first?.text, "Original")
+    }
+    @MainActor func testHistoryAppearanceOnMac() async throws {
+        guard ProcessInfo.processInfo.environment["BOLTBAR_HISTORY_SNAPSHOTS"] == "1" else { return }
+        _ = NSApplication.shared
+        let model = ChatModel()
+        model.history = ["Planning a weekend in the mountains", "A few ideas for Boltbar", "Quick question"].map {
+            ConversationSummary(id: UUID(), title: $0, createdAt: Date(), updatedAt: Date())
+        }
+        let host = NSHostingView(rootView: HistoryPane(model: model, close: {}).padding(16).background(Color(white: 0.11)))
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 560, height: 260),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        window.appearance = NSAppearance(named: .darkAqua); window.orderFrontRegardless()
+        defer { window.close() }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        func find<T: NSView>(_ view: NSView, _ type: T.Type) -> T? {
+            if let match = view as? T { return match }
+            return view.subviews.compactMap { find($0, type) }.first
+        }
+        let browser = try XCTUnwrap(find(host, HistoryBrowserView.self))
+        let table = try XCTUnwrap(browser.scroll.documentView as? ConversationTableView)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        for (name, width, confirming) in [("search", 560.0, false), ("delete", 420.0, true)] {
+            window.setContentSize(NSSize(width: width, height: 260)); host.layoutSubtreeIfNeeded()
+            if confirming { table.deleteSelection?() }
+            try await Task.sleep(nanoseconds: 100_000_000)
+            if let cell = table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? ConversationCellView { cell.trash.isHidden = false }
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try data.write(to: root.appendingPathComponent(".qa-local/history-\(name).png"))
         }
     }
     func store() throws -> ConversationStore {

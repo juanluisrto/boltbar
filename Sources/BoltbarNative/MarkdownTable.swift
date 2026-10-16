@@ -61,6 +61,7 @@ private struct TableWidthKey: PreferenceKey {
 }
 
 struct MarkdownTableView: View {
+    @Environment(\.boltbarTheme) private var theme
     let table: MarkdownTable
     @State private var availableWidth: CGFloat = 0
     private func inline(_ text: String) -> AttributedString {
@@ -102,16 +103,16 @@ struct MarkdownTableView: View {
         let widths = widths
         ScrollView(.horizontal) {
             VStack(spacing: 0) {
-                row(table.headers, widths: widths, header: true).background(.white.opacity(0.07))
+                row(table.headers, widths: widths, header: true).background(theme.surface)
                 ForEach(table.rows.indices, id: \.self) { index in
-                    Rectangle().fill(.white.opacity(0.09)).frame(height: 1)
+                    Rectangle().fill(theme.border).frame(height: 1)
                     row(table.rows[index], widths: widths, header: false)
-                        .background(.white.opacity(index.isMultiple(of: 2) ? 0.02 : 0))
+                        .background(theme.text.opacity(index.isMultiple(of: 2) ? 0.02 : 0))
                 }
             }.frame(width: widths.reduce(0, +))
-                .background(.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .background(theme.surface, in: RoundedRectangle(cornerRadius: 8))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.12), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.border, lineWidth: 1))
                 .padding(1)
         }.fixedSize(horizontal: false, vertical: true)
             .background(GeometryReader { Color.clear.preference(key: TableWidthKey.self, value: max(0, $0.size.width - 2)) })

@@ -96,6 +96,31 @@ final class ConversationStore: @unchecked Sendable {
             }
         }
     }
+    func delete(_ id: UUID) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async {
+                do {
+                    let file = self.url(id)
+                    let exists = FileManager.default.fileExists(atPath: file.path)
+                    let data = exists ? try Data(contentsOf: file) : nil
+                    if exists {
+                        try FileManager.default.removeItem(at: file)
+                    }
+                    let next = self.index.filter { $0.id != id }
+                    do { try self.write(next, to: self.directory.appendingPathComponent("index.json")) }
+                    catch {
+                        if let data {
+                            try data.write(to: file, options: .atomic)
+                            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+                        }
+                        throw error
+                    }
+                    self.index = next; self.searchText.removeValue(forKey: id)
+                    continuation.resume()
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
     func flush() { queue.sync {} }
     private func url(_ id: UUID) -> URL { directory.appendingPathComponent(id.uuidString + ".json") }
     private func write<T: Encodable>(_ value: T, to url: URL) throws {

@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-private let accent = Color(red: 0.98, green: 0.76, blue: 0.34)
 private struct SizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
@@ -12,6 +11,8 @@ private struct ThreadHeightKey: PreferenceKey {
 }
 
 struct AttachmentTile: View {
+    @Environment(\.boltbarTheme) private var theme
+    private var accent: Color { theme.accent }
     let attachment: Attachment
     var remove: (() -> Void)? = nil
     @State private var expanded = false
@@ -24,19 +25,19 @@ struct AttachmentTile: View {
                     .popover(isPresented: $expanded) { Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: 520, maxHeight: 450).padding(8) }
             } else {
                 HStack(spacing: 8) {
-                    Image(systemName: attachment.isPDF ? "doc.richtext" : "doc.text").font(.system(size: 22)).foregroundStyle(accent)
+                    Image(systemName: attachment.isPDF ? "doc.richtext" : "doc.text").font(.system(size: 22, design: .monospaced)).foregroundStyle(accent)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(attachment.name).font(.system(size: 11, weight: .medium)).lineLimit(2)
-                        Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.data.count), countStyle: .file)).font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text(attachment.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(2)
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.data.count), countStyle: .file)).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                     }
                 }.padding(10).frame(width: 160, height: 44)
             }
         }
-        .background(.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.10), lineWidth: 1))
+        .background(theme.surface).clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.border, lineWidth: 1))
         .overlay(alignment: .topTrailing) {
             if let remove {
-                Button(action: remove) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 20, height: 20).background(Color(white: 0.15), in: Circle()) }
+                Button(action: remove) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold, design: .monospaced)).frame(width: 20, height: 20).background(theme.background, in: Circle()) }
                     .buttonStyle(.plain).accessibilityLabel("Remove \(attachment.name)").offset(x: 3, y: -3)
             }
         }
@@ -60,7 +61,7 @@ struct MessageRow: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
-                    .font(.system(size: 9, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
                 Spacer()
                 if message.role == .assistant, !message.text.isEmpty {
                     CopyIconButton(text: message.text, label: "Copy response", visible: hovering)
@@ -69,7 +70,7 @@ struct MessageRow: View {
             if !message.attachments.isEmpty { AttachmentStrip(items: message.attachments) }
             if !message.text.isEmpty { MarkdownText(source: message.text) }
             else if message.pending {
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(message.activity ?? "Thinking…").font(.system(size: 13)).foregroundStyle(.secondary) }
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(message.activity ?? "Thinking…").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
             .contentShape(Rectangle()).onHover { hovering = $0 }
@@ -79,6 +80,8 @@ struct MessageRow: View {
 /// Keep the hit target and layout stable while revealing the action on hover
 /// or keyboard focus. Copy the original Markdown, including links and fences.
 struct CopyIconButton: View {
+    @Environment(\.boltbarTheme) private var theme
+    private var accent: Color { theme.accent }
     let text: String
     let label: String
     var visible = true
@@ -91,10 +94,10 @@ struct CopyIconButton: View {
             copied = NSPasteboard.general.setString(text, forType: .string)
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(copied ? accent : .secondary)
                 .frame(width: 24, height: 22)
-                .background(.white.opacity(hovering || focused ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 5))
+                .background(theme.text.opacity(hovering || focused ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 5))
         }.buttonStyle(.plain).focused($focused)
             .opacity(visible || focused || copied ? 1 : 0)
             .onHover { hovering = $0 }
@@ -109,6 +112,8 @@ struct CopyIconButton: View {
 }
 
 struct ChatBar: View {
+    @Environment(\.boltbarTheme) private var theme
+    private var accent: Color { theme.accent }
     @ObservedObject var model: ChatModel
     @State private var showModels = false
     var body: some View {
@@ -130,41 +135,41 @@ struct ChatBar: View {
                         .onChange(of: model.messages.last?.text) { _ in reader.scrollTo("bottom", anchor: .bottom) }
                         .onChange(of: model.messages.count) { _ in reader.scrollTo("bottom", anchor: .bottom) }
                 }
-                Rectangle().fill(.white.opacity(0.08)).frame(height: 1)
+                Rectangle().fill(theme.border).frame(height: 1)
             }
             if !model.attachments.isEmpty {
                 AttachmentStrip(items: model.attachments) { id in model.attachments.removeAll { $0.id == id } }
             }
             ZStack(alignment: .topLeading) {
-                if model.draft.isEmpty { Text("Ask anything…").font(.system(size: 15)).foregroundStyle(.gray).padding(.top, 2).allowsHitTesting(false) }
+                if model.draft.isEmpty { Text("Ask anything…").font(.system(size: 15, design: .monospaced)).foregroundStyle(.gray).padding(.top, 2).allowsHitTesting(false) }
                 GrowingEditor(model: model).onAppear { DispatchQueue.main.async { model.focusComposer?() } }
             }.frame(height: model.inputHeight)
             if let error = model.error {
                 HStack(alignment: .top, spacing: 8) {
-                    Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    Text(error).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.error).fixedSize(horizontal: false, vertical: true).padding(8).background(theme.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                     Spacer(minLength: 0)
-                    if !model.messages.isEmpty { Button("Retry") { model.retry() }.font(.system(size: 12)).buttonStyle(.borderless) }
+                    if !model.messages.isEmpty { Button("Retry") { model.retry() }.font(.system(size: 12, design: .monospaced)).buttonStyle(.borderless) }
                     Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
                 }
             }
             HStack(spacing: 9) {
-                Button { model.pickFiles() } label: { Image(systemName: "plus").font(.system(size: 16, weight: .medium)).frame(width: 30, height: 30).background(.white.opacity(0.07), in: Circle()) }
+                Button { model.pickFiles() } label: { Image(systemName: "plus").font(.system(size: 16, weight: .medium, design: .monospaced)).frame(width: 30, height: 30).background(theme.surface, in: Circle()) }
                     .buttonStyle(.plain).accessibilityLabel("Attach files")
                 Button { showModels.toggle() } label: {
                     HStack(spacing: 8) {
                         Text(modelTitle(model.model)).lineLimit(1)
                         EffortGauge(effort: model.preferences.effort).frame(width: 18, height: 16).accessibilityHidden(true)
                     }
-                        .font(.system(size: 12, weight: .medium)).padding(.horizontal, 11).frame(height: 29).background(.white.opacity(0.07), in: Capsule())
+                        .font(.system(size: 12, weight: .medium, design: .monospaced)).padding(.horizontal, 11).frame(height: 29).background(theme.surface, in: Capsule())
                 }.buttonStyle(.plain).accessibilityLabel("Effort and model")
                     .accessibilityValue("\(modelTitle(model.model)), \(model.preferences.effort.title) effort")
                     .help("\(model.preferences.effort.title) effort")
                     .popover(isPresented: $showModels, arrowEdge: .top) { ModelPopover(model: model, close: { showModels = false }) }
                 Button { showModels = false; model.showHistory() } label: {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 14)).foregroundStyle(.secondary).frame(width: 30, height: 30)
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 14, design: .monospaced)).foregroundStyle(.secondary).frame(width: 30, height: 30)
                 }.buttonStyle(.plain).help("Previous chats (→ when the message is empty)").accessibilityLabel("Previous chats")
                 Button { model.webSearch.toggle() } label: {
-                    Image(systemName: "globe").font(.system(size: 15))
+                    Image(systemName: "globe").font(.system(size: 15, design: .monospaced))
                         .foregroundStyle(model.webSearchActive ? accent : .secondary)
                         .frame(width: 30, height: 30)
                         .background(model.webSearchActive ? accent.opacity(0.12) : .clear, in: Circle())
@@ -174,18 +179,18 @@ struct ChatBar: View {
                     .help(model.canSearchWeb ? (model.webSearch ? "Web access on · searches when needed" : "Allow web search · remembers your choice") : "Web search requires OpenAI with an API key")
                 PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
                 Button { if model.streaming { model.stop() } else { model.send() } } label: {
-                    Image(systemName: model.streaming ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold))
-                        .frame(width: 31, height: 31).background(accent, in: Circle()).foregroundStyle(.black)
+                    Image(systemName: model.streaming ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold, design: .monospaced))
+                        .frame(width: 31, height: 31).background(accent, in: Circle()).foregroundStyle(theme.onAccent)
                 }.buttonStyle(.plain).accessibilityLabel(model.streaming ? "Stop" : "Send")
             }
             }
             if let error = model.historyError {
-                Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                Text(error).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.error).fixedSize(horizontal: false, vertical: true).padding(8).background(theme.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
             }
         }
         .padding(.horizontal, 16).padding(.top, 9).padding(.bottom, 14)
-        .frame(width: model.panelWidth).background(Color(red: 0.105, green: 0.105, blue: 0.115))
-        .clipShape(RoundedRectangle(cornerRadius: 19)).preferredColorScheme(.dark)
+        .frame(width: model.panelWidth).background(theme.background)
+        .clipShape(RoundedRectangle(cornerRadius: 19))
         .overlay(PanelBorders(model: model))
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { Color.clear.preference(key: SizeKey.self, value: $0.size) })
@@ -194,13 +199,15 @@ struct ChatBar: View {
 }
 
 struct EffortGauge: View {
+    @Environment(\.boltbarTheme) private var theme
+    private var accent: Color { theme.accent }
     let effort: Effort
     private var angle: Double { switch effort { case .low: return -150; case .medium: return -90; case .high: return -30 } }
     var body: some View {
         ZStack {
             Path { path in
                 path.addArc(center: CGPoint(x: 9, y: 12), radius: 7.5, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-            }.stroke(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
+            }.stroke(theme.text.opacity(0.45), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
             Path { path in
                 path.move(to: CGPoint(x: 9, y: 12))
                 let radians = angle * .pi / 180
@@ -212,37 +219,41 @@ struct EffortGauge: View {
 }
 
 struct ModelPopover: View {
+    @Environment(\.boltbarTheme) private var theme
+    private var accent: Color { theme.accent }
     @ObservedObject var model: ChatModel
     let close: () -> Void
     var effort: Binding<Double> { Binding(get: { Double(Effort.allCases.firstIndex(of: model.preferences.effort) ?? 0) }, set: { model.preferences.effort = Effort.allCases[min(2, max(0, Int($0.rounded())))] }) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("Thinking effort"); Spacer(); Text(model.preferences.effort.title).frame(width: 52, alignment: .trailing).foregroundStyle(.secondary) }.font(.system(size: 12, weight: .medium))
+            HStack { Text("Thinking effort"); Spacer(); Text(model.preferences.effort.title).frame(width: 52, alignment: .trailing).foregroundStyle(.secondary) }.font(.system(size: 12, weight: .medium, design: .monospaced))
             Slider(value: effort, in: 0...2, step: 1).tint(accent).accessibilityLabel("Thinking effort")
-            HStack { Text("Low"); Spacer(); Text("Medium"); Spacer(); Text("High") }.font(.system(size: 10)).foregroundStyle(.secondary)
+            HStack { Text("Low"); Spacer(); Text("Medium"); Spacer(); Text("High") }.font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Provider.allCases) { provider in
-                        Text(provider.title.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 8)
+                        Text(provider.title.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary).padding(.top, 8)
                         ForEach(model.catalogs[provider]?.models ?? provider.defaults, id: \.self) { id in
                             Button {
                                 model.preferences.provider = provider; model.preferences.models[provider.rawValue] = id; close()
                             } label: {
                                 HStack { Text(modelTitle(id)).lineLimit(1); Spacer(); if model.provider == provider && model.model == id { Image(systemName: "checkmark").foregroundStyle(accent) } }
-                                    .font(.system(size: 12)).padding(.vertical, 7).padding(.horizontal, 6).frame(maxWidth: .infinity, alignment: .leading)
+                                    .font(.system(size: 12, design: .monospaced)).padding(.vertical, 7).padding(.horizontal, 6).frame(maxWidth: .infinity, alignment: .leading)
                                     .contentShape(Rectangle())
                             }.buttonStyle(.plain)
                         }
                     }
                 }
             }.frame(maxHeight: 280)
-            Button("Provider settings…") { close(); model.openSettings?() }.font(.system(size: 11)).buttonStyle(.borderless)
-        }.padding(16).frame(width: 280).background(Color(white: 0.12)).preferredColorScheme(.dark)
+            Button("Provider settings…") { close(); model.openSettings?() }.font(.system(size: 11, design: .monospaced)).buttonStyle(.borderless)
+        }.padding(16).frame(width: 280).background(theme.background)
     }
 }
 
 struct MarkdownText: View {
+    @Environment(\.boltbarTheme) private var theme
+    private var accent: Color { theme.accent }
     let source: String
     struct Block { var text: String; var code: Bool; var language: String = ""; var table: MarkdownTable? = nil }
     static func blocks(_ source: String) -> [Block] {
@@ -269,13 +280,13 @@ struct MarkdownText: View {
             return blocks
         }
     }
-    static func highlighted(_ source: String) -> AttributedString {
-        let result = NSMutableAttributedString(string: source, attributes: [.foregroundColor: NSColor(white: 0.86, alpha: 1), .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
+    static func highlighted(_ source: String, theme: ThemePalette = ThemeName.graphite.palette) -> AttributedString {
+        let result = NSMutableAttributedString(string: source, attributes: [.foregroundColor: theme.textNS, .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
         let rules: [(String, NSColor)] = [
-            (#"\b(let|var|func|fn|struct|class|enum|import|use|return|if|else|for|while|async|await|def|const|function|true|false|nil|null|public|private|static|throw|try)\b"#, .systemPurple),
-            (#"\b[0-9]+(?:\.[0-9]+)?\b"#, .systemOrange),
-            (#"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#, .systemGreen),
-            (#"(?m)//[^\n]*|^[ \t]*#[^\n]*"#, .systemGray),
+            (#"\b(let|var|func|fn|struct|class|enum|import|use|return|if|else|for|while|async|await|def|const|function|true|false|nil|null|public|private|static|throw|try)\b"#, NSColor(hex: theme.dark ? "C6A0E8" : "7651A8")!),
+            (#"\b[0-9]+(?:\.[0-9]+)?\b"#, NSColor(hex: theme.dark ? "E5BB88" : "986020")!),
+            (#"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#, NSColor(hex: theme.dark ? "A0CCB8" : "39735C")!),
+            (#"(?m)//[^\n]*|^[ \t]*#[^\n]*"#, NSColor(hex: theme.dark ? "A1A6B3" : "656968")!),
         ]
         for (pattern, color) in rules {
             if let regex = try? NSRegularExpression(pattern: pattern) {
@@ -291,9 +302,9 @@ struct MarkdownText: View {
                     MarkdownTableView(table: table)
                 } else if block.code {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text(block.language.isEmpty ? "Code" : block.language).foregroundStyle(.secondary); Spacer(); CopyIconButton(text: block.text, label: "Copy code") }.font(.system(size: 10))
-                        ScrollView(.horizontal) { Text(Self.highlighted(block.text)).textSelection(.enabled).fixedSize(horizontal: true, vertical: false) }
-                    }.padding(10).background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+                        HStack { Text(block.language.isEmpty ? "Code" : block.language).foregroundStyle(.secondary); Spacer(); CopyIconButton(text: block.text, label: "Copy code") }.font(.system(size: 10, design: .monospaced))
+                        ScrollView(.horizontal) { Text(Self.highlighted(block.text, theme: theme)).textSelection(.enabled).fixedSize(horizontal: true, vertical: false) }
+                    }.padding(10).background(theme.surface, in: RoundedRectangle(cornerRadius: 8))
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(block.text.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in

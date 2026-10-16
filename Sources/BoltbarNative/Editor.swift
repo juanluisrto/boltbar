@@ -67,6 +67,7 @@ final class ComposerTextView: NSTextView {
 }
 
 struct GrowingEditor: NSViewRepresentable {
+    @Environment(\.boltbarTheme) private var theme
     @ObservedObject var model: ChatModel
     static func height(for content: CGFloat, manual: CGFloat = 26) -> CGFloat { max(manual, min(160, max(26, content))) }
     func makeCoordinator() -> Coordinator { Coordinator(model) }
@@ -78,8 +79,8 @@ struct GrowingEditor: NSViewRepresentable {
         let text = ComposerTextView(frame: NSRect(x: 0, y: 0, width: 668, height: 26))
         scroll.drawsBackground = false; scroll.borderType = .noBorder; scroll.documentView = text
         scroll.hasVerticalScroller = false; scroll.autohidesScrollers = true
-        text.isRichText = false; text.drawsBackground = false; text.textColor = .white
-        text.insertionPointColor = .white; text.font = .systemFont(ofSize: 15)
+        text.isRichText = false; text.drawsBackground = false; text.textColor = theme.textNS
+        text.insertionPointColor = theme.accentNS; text.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
         text.textContainerInset = NSSize(width: 0, height: 2)
         text.textContainer?.lineFragmentPadding = 0
         text.isVerticallyResizable = true; text.isHorizontallyResizable = false
@@ -99,6 +100,8 @@ struct GrowingEditor: NSViewRepresentable {
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let text = scroll.documentView as? ComposerTextView else { return }
+        text.textColor = theme.textNS; text.insertionPointColor = theme.accentNS
+        text.selectedTextAttributes = [.backgroundColor: theme.accentNS.withAlphaComponent(0.25), .foregroundColor: theme.textNS]
         if text.string != model.draft { text.string = model.draft }
         scroll.hasVerticalScroller = model.inputHeight >= 160
     }

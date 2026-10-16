@@ -3,6 +3,9 @@ import SwiftUI
 
 @MainActor final class ChatModel: ObservableObject {
     typealias Streamer = (ChatRequest, @escaping (StreamUpdate) async -> Void) async throws -> Void
+    @Published var appearance: AppearancePreferences {
+        didSet { if let data = try? JSONEncoder().encode(appearance) { defaults.set(data, forKey: "appearance") } }
+    }
     @Published var preferences: Preferences { didSet { persist() } }
     @Published var catalogs: [Provider: Catalog] = [:]
     @Published var draft = ""
@@ -40,6 +43,7 @@ import SwiftUI
     private let defaults: UserDefaults
     private let streamer: Streamer
     private var historyStore: ConversationStore?
+    private var deletingConversationID: UUID?
     private var conversationID = UUID()
     private var conversationCreated = Date()
     private var conversationDirty = false
@@ -47,11 +51,13 @@ import SwiftUI
 
     init(defaults: UserDefaults = .standard, historyStore: ConversationStore? = nil, streamer: @escaping Streamer = Providers.stream) {
         self.defaults = defaults
+        appearance = defaults.data(forKey: "appearance").flatMap { try? JSONDecoder().decode(AppearancePreferences.self, from: $0) } ?? AppearancePreferences()
         self.historyStore = historyStore
         self.history = historyStore?.summaries ?? []
         self.streamer = streamer
         self.webSearch = defaults.bool(forKey: "webSearchEnabled")
         preferences = defaults.data(forKey: "preferences").flatMap { try? JSONDecoder().decode(Preferences.self, from: $0) } ?? Preferences()
+        preferences.models.removeValue(forKey: "cursor"); preferences.transports.removeValue(forKey: "cursor")
         for provider in Provider.allCases {
             if !provider.accepts(preferences.model(provider)) { preferences.models[provider.rawValue] = provider.defaults[0] }
             let cached = defaults.stringArray(forKey: "catalog.\(provider.rawValue)")
@@ -152,7 +158,7 @@ import SwiftUI
         return models.first
     }
     func saveConversation() {
-        guard conversationDirty, messages.contains(where: { $0.role == .user }), let historyStore else { return }
+        guard deletingConversationID != conversationID, conversationDirty, messages.contains(where: { $0.role == .user }), let historyStore else { return }
         let summary = ConversationSummary(id: conversationID, title: Conversation.title(for: messages), createdAt: conversationCreated, updatedAt: Date())
         var savedMessages = messages
         for index in savedMessages.indices { savedMessages[index].pending = false }
@@ -163,6 +169,28 @@ import SwiftUI
             if let error { Task { @MainActor in self?.historyError = "Could not save chat history: \(error.localizedDescription)" } }
         }
         if showingHistory { filterHistory() }
+    }
+    func deleteConversation(_ id: UUID) async {
+        guard let historyStore, deletingConversationID == nil, !openingConversation else { return }
+        if conversationID == id { stop() }
+        deletingConversationID = id
+        defer { deletingConversationID = nil }
+        do {
+            try await historyStore.delete(id)
+            let visible = filteredHistory
+            let row = visible.firstIndex { $0.id == id } ?? 0
+            history.removeAll { $0.id == id }
+            if selectedHistoryID == id {
+                let remaining = filteredHistory
+                selectedHistoryID = remaining.isEmpty ? nil : remaining[min(row, remaining.count - 1)].id
+            }
+            if conversationID == id {
+                messages = []; conversationID = UUID(); conversationCreated = Date()
+                conversationDirty = false; lastRequest = nil; canReturnToHistory = false
+                error = nil; threadHeight = 44; manualThreadHeight = nil
+            }
+            historyError = nil
+        } catch { historyError = "Could not delete this conversation: \(error.localizedDescription)" }
     }
     func openConversation(_ id: UUID) async -> Bool {
         guard let historyStore, !openingConversation else { return false }
