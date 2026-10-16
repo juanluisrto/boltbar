@@ -11,13 +11,13 @@ A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. Starting with
 - Previous chats open inside the bar from the clock button or **→** in an empty composer. Start typing to filter titles and all message text locally; accents and case do not matter. Use ↑/↓ to select and **→** or Return to open. In a reopened chat, **←** with an empty composer returns to the same filter and selection. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
 - Settings → Appearance offers Paper and Mist light themes, Graphite and Midnight dark themes, System/Light/Dark mode, and a custom accent color. Interface controls use monospaced text; rendered chat content retains its reading typography.
 - Delete a history item with its hover trash button or press Delete twice; Escape or navigation cancels keyboard confirmation.
-- The globe allows web search with OpenAI API; the model decides when a search is needed and returns clickable source citations. Boltbar remembers that choice across new chats and app restarts. Search is unavailable on CLI transports and other providers; the saved choice is retained when switching back to OpenAI.
+- The globe allows web search with OpenAI API and Claude API/CLI; the model decides when a search is needed and returns clickable source citations. Boltbar remembers that choice across new chats and app restarts. Codex CLI still requires switching to API mode for search. The saved choice is retained when switching providers.
 - OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex or Claude Code CLI sessions.
 - API keys use macOS Keychain service `com.boltbar.keys`. Chats and attachments are saved locally in `~/Library/Application Support/Boltbar/Conversations`, with a private metadata index and a separate file per conversation. Keys are never included.
 
 ## Install
 
-Download the universal ZIP or DMG from [v0.2.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.2.0), or run:
+Download the universal ZIP or DMG from [v0.3.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.3.0), or run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh
 
 The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
 
-**v0.2.0 is ad hoc signed and is not notarized.** macOS Gatekeeper may block the first launch of a downloaded copy. Only if you trust the download, use macOS System Settings → Privacy & Security → Open Anyway. The installer does not remove quarantine or disable Gatekeeper. You can also build from source below.
+**v0.3.0 is ad hoc signed and is not notarized.** macOS Gatekeeper may block the first launch of a downloaded copy. Only if you trust the download, use macOS System Settings → Privacy & Security → Open Anyway. The installer does not remove quarantine or disable Gatekeeper. You can also build from source below.
 
 The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
 
@@ -51,7 +51,7 @@ The default build uses an ad hoc signature. For local development, supply an exi
 
 From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-`sh scripts/package-release.sh` builds the universal app and creates a ZIP, DMG and `SHA256SUMS` under `build/releases/v0.2.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
+`sh scripts/package-release.sh` builds the universal app and creates a ZIP, DMG and `SHA256SUMS` under `build/releases/v0.3.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
 ## Credentials and providers
 

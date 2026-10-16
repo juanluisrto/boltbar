@@ -64,21 +64,23 @@ enum Providers {
             }
             return body
         }
-        return ["model": request.model, "stream": true, "max_tokens": 8192,
+        var body: [String: Any] = ["model": request.model, "stream": true, "max_tokens": 8192,
             "thinking": ["type": "adaptive"], "output_config": ["effort": request.effort.rawValue], "messages": messages]
+        if request.webSearch { body["tools"] = [["type": "web_search_20250305", "name": "web_search", "max_uses": 5]] }
+        return body
     }
 
     static func stream(_ request: ChatRequest, update: @escaping (StreamUpdate) async -> Void) async throws {
-        if request.webSearch && (request.provider != .openai || request.transport == .cli) {
+        if request.webSearch && request.provider == .openai && request.transport == .cli {
             throw AppError("Web search needs OpenAI with an API key. Select OpenAI and API key or Automatic in Settings.")
         }
         if request.transport == .cli {
-            try await CLI.stream(request) { await update(.text($0)) }; return
+            try await CLI.stream(request, activity: { await update(.activity($0)) }) { await update(.text($0)) }; return
         }
         let key = try Keychain.key(request.provider)
         if request.transport == .automatic && key == nil {
-            guard !request.webSearch else { throw AppError("Add an OpenAI API key in Settings to search the web.") }
-            try await CLI.stream(request) { await update(.text($0)) }
+            guard !request.webSearch || request.provider == .anthropic else { throw AppError("Add an OpenAI API key in Settings to search the web.") }
+            try await CLI.stream(request, activity: { await update(.activity($0)) }) { await update(.text($0)) }
             return
         }
         guard let key, !key.isEmpty else { throw AppError("Add an API key in Settings or choose an existing CLI login.") }
@@ -103,6 +105,7 @@ enum Providers {
         metric(["kind": "headers", "provider": request.provider.rawValue, "status": status])
         guard (200..<300).contains(status) else { throw AppError("\(request.provider.title) returned HTTP \(status). Check the key, model access, and quota in Settings.") }
         var frames = EventFrames(), openAI = OpenAITextStream()
+        var claude = AnthropicTextStream()
         for try await byte in bytes {
             try Task.checkCancellation()
             guard let data = try frames.consume(byte: byte) else { continue }
@@ -111,7 +114,7 @@ enum Providers {
             if ["error", "response.failed", "response.incomplete"].contains(type) { throw AppError("The provider did not complete the response. You can retry this message.") }
             if request.provider == .openai {
                 for item in openAI.consume(event) { await update(item) }
-            } else if let text = textDelta(event), !text.isEmpty { await update(.text(text)) }
+            } else { for item in try claude.consume(event) { await update(item) } }
             if ["response.completed", "message_stop"].contains(type) { return }
         }
         throw AppError("The connection ended before the response completed.")
@@ -259,10 +262,11 @@ enum CLI {
         var data = try JSONSerialization.data(withJSONObject: message); data.append(10)
         return Invocation(arguments: ["-p", "--verbose", "--include-partial-messages", "--input-format", "stream-json",
             "--output-format", "stream-json", "--model", request.model, "--effort", request.effort.rawValue,
-            "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
-            "--safe-mode", "--no-session-persistence", "--system-prompt", CLIInput.instructions], input: data)
+            "--tools", request.webSearch ? "WebSearch,WebFetch" : "",
+            "--allowedTools", request.webSearch ? "WebSearch,WebFetch" : "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
+            "--safe-mode", "--no-session-persistence", "--system-prompt", request.webSearch ? CLIInput.webInstructions : CLIInput.instructions], input: data)
     }
-    static func stream(_ request: ChatRequest, delta: @escaping (String) async -> Void) async throws {
+    static func stream(_ request: ChatRequest, activity: @escaping (String) async -> Void = { _ in }, delta: @escaping (String) async -> Void) async throws {
         if request.provider == .openai { try await CodexChat.stream(request, delta: delta); return }
         let invocation = try invocation(request)
         let child = try LineProcess(program: program(request.provider), args: invocation.arguments, stdin: invocation.input)
@@ -272,6 +276,9 @@ enum CLI {
             for try await line in child.lines {
                 try Task.checkCancellation()
                 guard let data = line.data(using: .utf8), let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                if let inner = event["event"] as? [String: Any], inner["type"] as? String == "content_block_start",
+                   let block = inner["content_block"] as? [String: Any], let name = block["name"] as? String,
+                   ["WebSearch", "WebFetch"].contains(name) { await activity(name == "WebSearch" ? "Searching the web…" : "Reading web page…") }
                 for text in try parser.consume(event) { await delta(text) }
                 if parser.completed { return }
             }

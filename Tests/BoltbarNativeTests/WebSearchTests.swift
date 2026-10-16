@@ -2,6 +2,27 @@ import XCTest
 @testable import BoltbarNative
 
 final class WebSearchTests: XCTestCase {
+    func testClaudeSearchToolsAreOptInForAPIAndCLI() throws {
+        var request = ChatRequest(provider: .anthropic, model: "claude-haiku-5-5", effort: .low, transport: .cli,
+            messages: [Message(role: .user, text: "Search Swift downloads")])
+        XCTAssertNil(Providers.body(request)["tools"])
+        XCTAssertFalse(try CLI.invocation(request).arguments.contains("WebSearch,WebFetch"))
+        request.webSearch = true
+        let tools = Providers.body(request)["tools"] as? [[String: Any]]
+        XCTAssertEqual(tools?.first?["name"] as? String, "web_search")
+        let args = try CLI.invocation(request).arguments
+        XCTAssertEqual(args[args.firstIndex(of: "--tools")! + 1], "WebSearch,WebFetch")
+        XCTAssertEqual(args[args.firstIndex(of: "--allowedTools")! + 1], "WebSearch,WebFetch")
+        XCTAssertTrue(args.contains(CLIInput.webInstructions))
+    }
+    func testClaudeStreamingCitationsAndSearchErrors() throws {
+        var stream = AnthropicTextStream()
+        let start = try stream.consume(["type": "content_block_start", "content_block": ["type": "server_tool_use", "name": "web_search"]])
+        guard case .activity("Searching the web…") = start.first else { return XCTFail("Missing activity") }
+        let result = try stream.consume(["type": "content_block_delta", "delta": ["type": "citations_delta", "citation": ["type": "web_search_result_location", "url": "https://swift.org/download/"]]])
+        guard case .text(" [1](<https://swift.org/download/>)") = result.first else { return XCTFail("Missing citation") }
+        XCTAssertThrowsError(try stream.consume(["type": "content_block_start", "content_block": ["type": "web_search_tool_result", "content": ["type": "web_search_tool_result_error", "error_code": "unavailable"]]]))
+    }
     func testSearchIsOptInAndLetsTheModelDecideWhetherToUseIt() {
         var request = ChatRequest(provider: .openai, model: "gpt-6.1-sol", effort: .low, transport: .api,
             messages: [Message(role: .user, text: "Find Swift downloads")])
@@ -75,7 +96,7 @@ final class WebSearchTests: XCTestCase {
         model.reset(); await late?(.replaceText("late source")); await late?(.activity("late activity"))
         XCTAssertTrue(model.messages.isEmpty); XCTAssertTrue(model.webSearch)
         model.preferences.provider = .anthropic
-        XCTAssertTrue(model.webSearch); XCTAssertFalse(model.webSearchActive)
+        XCTAssertTrue(model.webSearch); XCTAssertTrue(model.webSearchActive)
         model.preferences.provider = .openai
         XCTAssertTrue(model.webSearchActive)
         let restarted = ChatModel(defaults: defaults)

@@ -74,7 +74,7 @@ import SwiftUI
     }
     var provider: Provider { preferences.provider }
     var model: String { preferences.model(provider) }
-    var canSearchWeb: Bool { provider == .openai && preferences.transport(provider) != .cli }
+    var canSearchWeb: Bool { provider == .anthropic || preferences.transport(provider) != .cli }
     var webSearchActive: Bool { webSearch && canSearchWeb }
     var filteredHistory: [ConversationSummary] {
         guard let historyMatches else { return history }

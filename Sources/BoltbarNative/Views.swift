@@ -176,7 +176,7 @@ struct ChatBar: View {
                 }.buttonStyle(.plain).disabled(!model.canSearchWeb || model.streaming)
                     .accessibilityLabel("Search the web")
                     .accessibilityValue(model.webSearchActive ? "On" : "Off")
-                    .help(model.canSearchWeb ? (model.webSearch ? "Web access on · searches when needed" : "Allow web search · remembers your choice") : "Web search requires OpenAI with an API key")
+                    .help(model.canSearchWeb ? (model.webSearch ? "Web access on · searches when needed" : "Allow web search · remembers your choice") : "Web search with Codex requires an OpenAI API key")
                 PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
                 Button { if model.streaming { model.stop() } else { model.send() } } label: {
                     Image(systemName: model.streaming ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold, design: .monospaced))

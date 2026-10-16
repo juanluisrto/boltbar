@@ -98,3 +98,31 @@ struct OpenAITextStream {
         }
     }
 }
+
+/// Claude emits web citations alongside text deltas, without text offsets.
+struct AnthropicTextStream {
+    private var urls: [String] = []
+    mutating func consume(_ event: [String: Any]) throws -> [StreamUpdate] {
+        if event["type"] as? String == "content_block_start", let block = event["content_block"] as? [String: Any] {
+            if block["type"] as? String == "server_tool_use", block["name"] as? String == "web_search" {
+                return [.activity("Searching the web…")]
+            }
+            if block["type"] as? String == "web_search_tool_result" {
+                if let content = block["content"] as? [String: Any], content["type"] as? String == "web_search_tool_result_error" {
+                    throw AppError("Claude web search failed. Check web search access in the Claude Console, then retry.")
+                }
+                return [.activity("Writing answer…")]
+            }
+        }
+        guard event["type"] as? String == "content_block_delta", let delta = event["delta"] as? [String: Any] else { return [] }
+        if let text = delta["text"] as? String { return [.text(text)] }
+        if delta["type"] as? String == "citations_delta", let citation = delta["citation"] as? [String: Any],
+           citation["type"] as? String == "web_search_result_location", let raw = citation["url"] as? String,
+           let url = URL(string: raw), ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
+            let address = url.absoluteString.replacingOccurrences(of: ">", with: "%3E").replacingOccurrences(of: "<", with: "%3C")
+            if !urls.contains(address) { urls.append(address) }
+            return [.text(" [\(urls.firstIndex(of: address)! + 1)](<\(address)>)")]
+        }
+        return []
+    }
+}
