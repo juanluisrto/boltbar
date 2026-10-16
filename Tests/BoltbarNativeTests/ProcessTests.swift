@@ -7,10 +7,16 @@ final class ProcessTests: XCTestCase {
         for provider in Provider.allCases {
             let request = ChatRequest(provider: provider, model: provider.defaults[0], effort: .low, transport: .cli,
                 messages: [Message(role: .user, text: "Summarize", attachments: [document])])
-            let invocation = try CLI.invocation(request)
-            XCTAssertLessThan(invocation.arguments.joined().utf8.count, 2048)
-            XCTAssertGreaterThan(invocation.input.count, document.data.count)
-            XCTAssertTrue(String(decoding: invocation.input, as: UTF8.self).contains("Attached document large.txt:"))
+            let arguments: [String], input: Data
+            if provider == .openai {
+                arguments = CodexChat.arguments
+                input = try JSONSerialization.data(withJSONObject: CLIInput.blocks(request, codex: true))
+            } else {
+                let invocation = try CLI.invocation(request); arguments = invocation.arguments; input = invocation.input
+            }
+            XCTAssertLessThan(arguments.joined().utf8.count, 2048)
+            XCTAssertGreaterThan(input.count, document.data.count)
+            XCTAssertTrue(String(decoding: input, as: UTF8.self).contains("Attached document large.txt:"))
         }
     }
     func testProcessDrainsInputLargerThanPipeAndArgumentLimits() async throws {

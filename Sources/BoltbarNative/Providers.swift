@@ -172,7 +172,7 @@ final class LineProcess: @unchecked Sendable {
     private var continuation: AsyncThrowingStream<String, Error>.Continuation!
     private(set) var lines: AsyncThrowingStream<String, Error>!
 
-    init(program: String, args: [String], stdin: Data? = nil) throws {
+    init(program: String, args: [String], stdin: Data? = nil, keepInputOpen: Bool = false) throws {
         process.executableURL = URL(fileURLWithPath: program); process.arguments = args
         process.standardInput = input; process.standardOutput = output; process.standardError = errors
         process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -196,7 +196,17 @@ final class LineProcess: @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             if let stdin { try? self.input.fileHandleForWriting.write(contentsOf: stdin) }
-            try? self.input.fileHandleForWriting.close()
+            if !keepInputOpen { try? self.input.fileHandleForWriting.close() }
+        }
+    }
+    private let writes = DispatchQueue(label: "com.boltbar.cli-input")
+    func send(_ object: [String: Any]) async throws {
+        var data = try JSONSerialization.data(withJSONObject: object); data.append(10)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            writes.async {
+                do { try self.input.fileHandleForWriting.write(contentsOf: data); continuation.resume() }
+                catch { continuation.resume(throwing: error) }
+            }
         }
     }
     private func receive(_ data: Data) {
@@ -243,42 +253,29 @@ enum CLI {
     }
     struct Invocation { let arguments: [String]; let input: Data }
     static func invocation(_ request: ChatRequest) throws -> Invocation {
-        var prompt = "Answer as a chat assistant. Do not use tools or inspect local files.\n\n"
-        for message in request.messages {
-            prompt += "\(message.role.rawValue): \(message.text)\n"
-            for file in message.attachments {
-                guard let text = file.text else { throw AppError("Images and PDFs require an API key transport. The CLI transport supports text documents.") }
-                prompt += "Attached document \(file.name):\n\(text)\n"
-            }
-        }
-        let args: [String]
-        switch request.provider {
-        case .openai:
-            args = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "--disable", "shell_tool", "--disable", "apps", "-c", "model_reasoning_effort=\"\(request.effort.rawValue)\"", "-m", request.model, "-"]
-        case .anthropic:
-            args = ["-p", "--verbose", "--include-partial-messages", "--output-format", "stream-json", "--model", request.model, "--effort", request.effort.rawValue, "--tools", ""]
-
-        }
-        return Invocation(arguments: args, input: Data(prompt.utf8))
+        guard request.provider == .anthropic else { throw AppError("OpenAI CLI uses the streaming app-server transport.") }
+        let content = try CLIInput.blocks(request, codex: false)
+        let message: [String: Any] = ["type": "user", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]
+        var data = try JSONSerialization.data(withJSONObject: message); data.append(10)
+        return Invocation(arguments: ["-p", "--verbose", "--include-partial-messages", "--input-format", "stream-json",
+            "--output-format", "stream-json", "--model", request.model, "--effort", request.effort.rawValue,
+            "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
+            "--safe-mode", "--no-session-persistence", "--system-prompt", CLIInput.instructions], input: data)
     }
     static func stream(_ request: ChatRequest, delta: @escaping (String) async -> Void) async throws {
+        if request.provider == .openai { try await CodexChat.stream(request, delta: delta); return }
         let invocation = try invocation(request)
         let child = try LineProcess(program: program(request.provider), args: invocation.arguments, stdin: invocation.input)
         defer { child.cancel() }
-        var partial = false, emitted = false
-        for try await line in child.lines {
-            try Task.checkCancellation()
-            guard let data = line.data(using: .utf8), let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-            let type = event["type"] as? String ?? ""
-            if let text = Providers.textDelta(event) { partial = true; emitted = true; await delta(text); continue }
-            if type == "result", event["is_error"] as? Bool == true { throw AppError("The CLI could not complete this request. Check its login and model access.") }
-            if type == "item.completed", let item = event["item"] as? [String: Any], item["type"] as? String == "agent_message", let text = item["text"] as? String {
-                emitted = true; await delta(text)
+        try await withTaskCancellationHandler {
+            var parser = ClaudeChatStream()
+            for try await line in child.lines {
+                try Task.checkCancellation()
+                guard let data = line.data(using: .utf8), let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                for text in try parser.consume(event) { await delta(text) }
+                if parser.completed { return }
             }
-            if !partial, type == "assistant", let message = event["message"] as? [String: Any], let content = message["content"] as? [[String: Any]] {
-                for part in content { if let text = part["text"] as? String { emitted = true; await delta(text) } }
-            }
-        }
-        guard emitted else { throw AppError("The CLI returned no text.") }
+            throw AppError("The CLI connection ended before the response completed.")
+        } onCancel: { child.cancel() }
     }
 }

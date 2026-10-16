@@ -100,7 +100,7 @@ struct SettingsView: View {
                     .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("OpenAI shows the latest stable Astra, Sol and Luna available in your API catalog. It syncs at launch and every six hours; offline or CLI-only sessions use the last synced catalog or bundled defaults.")
                     .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("API transports stream text fragments and support images/PDFs. CLI transports accept text documents; Codex exec currently returns complete message events.")
+                Text("API and CLI transports stream text and support images and text documents. PDFs require API mode.")
                     .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             }.padding(20).frame(maxWidth: .infinity, alignment: .leading)

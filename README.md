@@ -59,16 +59,16 @@ Open Settings to choose the provider, default model, effort, transport and short
 
 An explicit `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the launching environment takes precedence; normal Finder launches use Keychain. The app never writes those environment credentials to a file.
 
-For subscription login, run the command shown in Settings (`codex login`, `claude auth login`, or `agent login`), choose **CLI login**, and refresh. Boltbar lets the official CLI manage its tokens.
+For subscription login, run the command shown in Settings (`codex login` or `claude auth login`), choose **CLI login**, and refresh. Boltbar lets the official CLI manage its tokens.
 
 | Transport | Streaming | Attachments | Model discovery |
 |---|---|---|---|
 | OpenAI API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, latest Astra/Sol/Luna |
 | Anthropic API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, filtered |
-| Claude Code CLI | Partial message events | UTF-8 text | Explicit fallback catalog |
-| Codex CLI | Completed message events | UTF-8 text | Last synced API catalog or bundled defaults |
+| Claude Code CLI | Partial message events | Images, UTF-8 text | Explicit fallback catalog |
+| Codex CLI | App Server text deltas | Images, UTF-8 text | Last synced API catalog or bundled defaults |
 
-CLI image/PDF submissions produce an explicit error instead of silently losing files. CLI executables can maintain their own state according to their own settings.
+CLI requests send images and text documents through stdin. PDFs require API mode and produce an explicit error in CLI mode. Codex uses ephemeral App Server threads; Claude runs with session persistence disabled and skips custom extensions in safe mode.
 
 OpenAI discovery is an explicit product policy: only stable aliases in the Astra, Sol and Luna families are eligible, and the highest numeric version of each family is shown. Refresh runs at launch, every six hours, and on demand from Settings. A new family needs a policy change; future versions within these three families are automatic. API failures keep the last successful catalog. CLI-only users without a cached API catalog get the three bundled defaults; that is not a live availability guarantee.
 
@@ -85,7 +85,7 @@ Web search adds the hosted `web_search` tool to the same OpenAI Responses reques
 - `Conversations.swift`, `HistoryView.swift`: private local history, native keyboard list and friendly dates.
 - `FeaturedModels.swift`: approved OpenAI families and numeric version selection.
 - `Editor.swift`, `Views.swift`, `SettingsView.swift`: AppKit text editor and native SwiftUI views.
-- `Providers.swift`, `WebSearch.swift`: URLSession SSE, hosted web search and citation links, provider catalogs, CLI stdin/stdout pipes and cancellation.
+- `Providers.swift`, `CLIChat.swift`, `WebSearch.swift`: URLSession SSE, hosted web search and citation links, provider catalogs, CLI stdin/stdout pipes and cancellation.
 - `MarkdownTable.swift`: native Markdown table parsing, alignment and horizontal overflow.
 - `Tests/BoltbarNativeTests`: state, attachment payloads, cancellation, SSE and model-filter regression tests.
 - `native-spike/`: initial minimal comparison prototype, retained for the QA measurements.
