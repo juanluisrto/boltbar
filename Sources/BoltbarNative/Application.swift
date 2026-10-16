@@ -10,6 +10,7 @@ final class ChatPanel: NSPanel {
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model = ChatModel()
+    private lazy var updater = AppUpdater(model: model)
     var panel: ChatPanel!
     var settings: NSWindow?
     var status: NSStatusItem!
@@ -24,6 +25,7 @@ final class ChatPanel: NSPanel {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         model.enableLocalHistory()
+        _ = updater
         makeMenu()
         panel = ChatPanel(contentRect: NSRect(x: 0, y: 0, width: 700, height: 107), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Boltbar"; panel.delegate = self
@@ -65,6 +67,7 @@ final class ChatPanel: NSPanel {
         let appItem = NSMenuItem(); let appMenu = NSMenu()
         let newChat = appMenu.addItem(withTitle: "New chat", action: #selector(show), keyEquivalent: "n"); newChat.target = self
         let preferences = appMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ","); preferences.target = self
+        let update = appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: ""); update.target = updater
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Boltbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu; root.addItem(appItem)
@@ -77,6 +80,7 @@ final class ChatPanel: NSPanel {
         let menu = NSMenu()
         let show = menu.addItem(withTitle: "New chat", action: #selector(self.show), keyEquivalent: ""); show.target = self
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ","); settings.target = self
+        let updateStatus = menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: ""); updateStatus.target = updater
         menu.addItem(.separator()); menu.addItem(withTitle: "Quit Boltbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in [root, appMenu, edit, menu] { item.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular) }
         status.menu = menu
@@ -103,6 +107,7 @@ final class ChatPanel: NSPanel {
         panel.setFrame(frame, display: true)
     }
     @objc func show() {
+        model.selectingModel = false
         // A global shortcut must not reset the draft behind an open file sheet.
         if let attachmentPicker { attachmentPicker.makeKeyAndOrderFront(nil); return }
         let start = ProcessInfo.processInfo.systemUptime
@@ -157,7 +162,7 @@ final class ChatPanel: NSPanel {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Boltbar Settings"; window.isReleasedWhenClosed = false
             window.minSize = NSSize(width: 520, height: 540)
-            window.contentView = NSHostingView(rootView: ThemedView(model: model) { SettingsView(model: model) }); window.center(); settings = window
+            window.contentView = NSHostingView(rootView: ThemedView(model: model) { SettingsView(updater: updater, model: model) }); window.center(); settings = window
         }
         settings?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }

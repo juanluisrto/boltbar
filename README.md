@@ -1,6 +1,6 @@
 # Boltbar — native macOS
 
-A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. Starting with v0.2.0, the native implementation replaces the Tauri/React runtime. macOS 13 or newer.
+A compact AI chat bar built in Swift, SwiftUI and AppKit. Starting with v0.2.0, the native implementation replaces the Tauri/React runtime. macOS 13 or newer.
 
 ![Compact native bar](docs/qa/screenshots/native-22-gauge-chip.jpg)
 
@@ -10,6 +10,7 @@ A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. Starting with
 - A single model chip with an effort gauge, streamed replies, selectable Markdown, aligned tables, and highlighted fenced code. Copy a whole response from its hover/focus icon, or a code block from its own copy icon.
 - Previous chats open inside the bar from the clock button or **→** in an empty composer. Start typing to filter titles and all message text locally; accents and case do not matter. Use ↑/↓ to select and **→** or Return to open. In a reopened chat, **←** with an empty composer returns to the same filter and selection. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
 - Settings → Appearance offers Paper and Mist light themes, Graphite and Midnight dark themes, System/Light/Dark mode, and a custom accent color. Interface controls use monospaced text; rendered chat content retains its reading typography.
+- With an empty composer, ↑/↓ cycles models and outlines the model chip. While outlined, ←/→ changes effort. Typing, clicking the composer, Escape, or Return ends selection. The effort menu also offers direct Low/Medium/High buttons.
 - Delete a history item with its hover trash button or press Delete twice; Escape or navigation cancels keyboard confirmation.
 - The globe allows web search with OpenAI API and Claude API/CLI; the model decides when a search is needed and returns clickable source citations. Boltbar remembers that choice across new chats and app restarts. Codex CLI still requires switching to API mode for search. The saved choice is retained when switching providers.
 - OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex or Claude Code CLI sessions.
@@ -17,7 +18,7 @@ A compact AI chat bar built entirely in Swift, SwiftUI and AppKit. Starting with
 
 ## Install
 
-Download the universal ZIP or DMG from [v0.3.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.3.0), or run:
+Download the universal ZIP or DMG from [v0.4.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.4.0), or run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -25,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh
 
 The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
 
-**v0.3.0 is ad hoc signed and is not notarized.** macOS Gatekeeper may block the first launch of a downloaded copy. Only if you trust the download, use macOS System Settings → Privacy & Security → Open Anyway. The installer does not remove quarantine or disable Gatekeeper. You can also build from source below.
+**v0.4.0 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
 
 The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
 
@@ -39,7 +40,7 @@ sh scripts/build-native.sh
 open build/Boltbar.app
 ```
 
-No Node, Rust, WebKit or third-party Swift dependencies are needed. Quit older Boltbar builds before launching this one so they do not compete for the global shortcut.
+No Node, Rust or WebKit runtime is needed. Swift Package Manager fetches Sparkle for secure updates. Quit older Boltbar builds before launching this one so they do not compete for the global shortcut.
 
 A universal app containing Apple Silicon and Intel code:
 
@@ -51,7 +52,7 @@ The default build uses an ad hoc signature. For local development, supply an exi
 
 From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-`sh scripts/package-release.sh` builds the universal app and creates a ZIP, DMG and `SHA256SUMS` under `build/releases/v0.3.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
+With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.4.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
 ## Credentials and providers
 
@@ -63,14 +64,16 @@ For subscription login, run the command shown in Settings (`codex login` or `cla
 
 | Transport | Streaming | Attachments | Model discovery |
 |---|---|---|---|
-| OpenAI API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, latest Astra/Sol/Luna |
+| OpenAI API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, filtered chat catalog |
 | Anthropic API | Text deltas | Images, PDFs, UTF-8 text | Live `/v1/models`, filtered |
 | Claude Code CLI | Partial message events | Images, UTF-8 text | Explicit fallback catalog |
 | Codex CLI | App Server text deltas | Images, UTF-8 text | Last synced API catalog or bundled defaults |
 
 CLI requests send images and text documents through stdin. PDFs require API mode and produce an explicit error in CLI mode. Codex uses ephemeral App Server threads; Claude runs with session persistence disabled and skips custom extensions in safe mode.
 
-OpenAI discovery is an explicit product policy: only stable aliases in the Astra, Sol and Luna families are eligible, and the highest numeric version of each family is shown. Refresh runs at launch, every six hours, and on demand from Settings. A new family needs a policy change; future versions within these three families are automatic. API failures keep the last successful catalog. CLI-only users without a cached API catalog get the three bundled defaults; that is not a live availability guarantee.
+The Models section in Settings keeps a persistent shortlist shared by the model menu and keyboard cycling. Use Add more below the list to search the catalog and add a model; drag selected rows to reorder them or use their context menu. Defaults can keep Latest used or select a fixed starting model. At least one model must remain. Compatible general chat models are listed; specialized audio, image, embedding, coding and research models are excluded. Models without configurable reasoning omit the API reasoning parameter.
+
+Catalogs refresh at launch, every six hours, and on demand. Refresh never adds, replaces, removes or reorders selections. A selected model missing from a successful sync is marked unavailable; failed/offline syncs preserve the cached catalog. CLI-only catalogs are suggestions or cached API results, not verified subscription access.
 
 History begins with this native build; earlier in-memory conversations cannot be recovered. Stored chats include attachments and can be resumed after a restart. Search reads message text on a background queue and caches it in memory; it does not search inside attachment files or call a model. A missing or damaged chat file does not block other results; its indexed title remains searchable and opening it reports the error. The history is local, not cloud-synced.
 
@@ -108,3 +111,7 @@ Optional file arguments are for synthetic QA fixtures only. With fixtures, the p
 ## License
 
 [MIT](LICENSE)
+
+## Automatic updates
+
+Sparkle provides automatic update checks and an Install and Relaunch flow. Settings includes update controls, and both app menus offer Check for Updates. See [signed release setup](docs/UPDATES.md) for Developer ID signing, notarization, and publishing the update feed. Existing releases require one manual upgrade to gain this feature.

@@ -26,6 +26,13 @@ final class EditorScrollView: NSScrollView {
 }
 
 final class ComposerTextView: NSTextView {
+    var onPickerKey: ((UInt16) -> Bool)?
+    var onCycleModel: ((Int) -> Void)?
+    var onStepEffort: ((Int) -> Bool)?
+    var onEndModelSelection: (() -> Bool)?
+    override func mouseDown(with event: NSEvent) {
+        _ = onEndModelSelection?(); super.mouseDown(with: event)
+    }
     var onSend: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onSettings: (() -> Void)?
@@ -37,9 +44,15 @@ final class ComposerTextView: NSTextView {
         super.paste(sender)
     }
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { window?.orderOut(nil); return }
+        if hasMarkedText() { super.keyDown(with: event); return }
+        if event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty, onPickerKey?(event.keyCode) == true { return }
+        if event.keyCode == 53 { if onEndModelSelection?() != true { window?.orderOut(nil) }; return }
         if string.isEmpty, !hasMarkedText(),
            event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            if event.keyCode == 125 || event.keyCode == 126 { onCycleModel?(event.keyCode == 125 ? 1 : -1); return }
+            if event.keyCode == 123 || event.keyCode == 124,
+               onStepEffort?(event.keyCode == 124 ? 1 : -1) == true { return }
+            if event.keyCode == 36, onEndModelSelection?() == true { return }
             if event.keyCode == 124 { onHistory?(); return }
             if event.keyCode == 123, onBackToHistory?() == true { return }
         }
@@ -56,6 +69,7 @@ final class ComposerTextView: NSTextView {
             }
         }
         if event.keyCode == 36 && !event.modifierFlags.contains(.shift) && !hasMarkedText() { onSend?(); return }
+        if event.characters?.contains(where: { !$0.isNewline && !$0.isWhitespace }) == true || event.keyCode == 49 { _ = onEndModelSelection?() }
         super.keyDown(with: event)
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -90,6 +104,22 @@ struct GrowingEditor: NSViewRepresentable {
         text.autoresizingMask = [.width]; text.textContainer?.widthTracksTextView = true
         text.textContainer?.containerSize = NSSize(width: 668, height: CGFloat.greatestFiniteMagnitude)
         text.delegate = context.coordinator
+        text.onPickerKey = { code in
+            guard model.showingModelPicker else { return false }
+            switch code {
+            case 125, 126: model.cycleModel(code == 125 ? 1 : -1)
+            case 123, 124: model.stepEffort(code == 124 ? 1 : -1)
+            case 36, 53: model.endModelSelection()
+            default: model.endModelSelection(); return false
+            }
+            return true
+        }
+        text.onCycleModel = { model.cycleModel($0) }
+        text.onStepEffort = { direction in
+            guard model.selectingModel else { return false }
+            model.stepEffort(direction); return true
+        }
+        text.onEndModelSelection = { model.endModelSelection() }
         text.onSend = { model.send() }; text.onAttachment = { model.receive($0) }
         text.onNewChat = { model.newConversation?() }; text.onSettings = { model.openSettings?() }
         text.onHistory = { model.showHistory(preservingSearch: model.canReturnToHistory) }

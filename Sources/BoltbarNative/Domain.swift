@@ -28,10 +28,10 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
     }
     func accepts(_ model: String) -> Bool {
         let id = model.lowercased()
-        if ["audio", "realtime", "embed", "transcrib", "tts", "image", "search", "moderation"].contains(where: id.contains) { return false }
+        if ["audio", "realtime", "embed", "transcrib", "tts", "image", "search", "moderation", "codex", "deep-research", "-pro", "instruct"].contains(where: id.contains) { return false }
         switch self {
-        case .openai: return FeaturedModels.parts(id) != nil
-        case .anthropic: return id.hasPrefix("claude-") && !id.hasPrefix("claude-3")
+        case .openai: return id.range(of: "^gpt-[5-9][0-9]*([.-]|$)|^gpt-4[.]1([.-]|$)|^gpt-4o(-|$)|^o[34](-|$)", options: .regularExpression) != nil
+        case .anthropic: return id.range(of: "^claude-(sonnet|opus|haiku|fable)-(4-[6-9]|[5-9])(-|$)", options: .regularExpression) != nil
         }
     }
 }
@@ -108,7 +108,17 @@ struct AppError: LocalizedError {
 
 enum Keychain {
     static let service = "com.boltbar.keys"
+    // File-based login keychains can ignore LAContext.interactionNotAllowed.
+    // Serialize the legacy process-wide UI flag, restoring it after each read.
+    private static let interactionLock = NSLock()
     static func read(_ provider: Provider, allowInteraction: Bool = false) throws -> String? {
+        interactionLock.lock(); defer { interactionLock.unlock() }
+        var previous: DarwinBoolean = false
+        let captured = SecKeychainGetUserInteractionAllowed(&previous) == errSecSuccess
+        if !allowInteraction {
+            guard captured, SecKeychainSetUserInteractionAllowed(false) == errSecSuccess else { throw AppError("Could not read Keychain without interaction. Use Settings to allow access.") }
+        }
+        defer { if captured && !allowInteraction { SecKeychainSetUserInteractionAllowed(previous.boolValue) } }
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
             kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         if !allowInteraction {
@@ -125,6 +135,7 @@ enum Keychain {
         return (result as? Data).flatMap { String(data: $0, encoding: .utf8) }
     }
     static func save(_ key: String, for provider: Provider) throws {
+        interactionLock.lock(); defer { interactionLock.unlock() }
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw AppError("Enter an API key to save it.") }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue]

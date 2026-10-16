@@ -115,7 +115,6 @@ struct ChatBar: View {
     @Environment(\.boltbarTheme) private var theme
     private var accent: Color { theme.accent }
     @ObservedObject var model: ChatModel
-    @State private var showModels = false
     var body: some View {
         VStack(spacing: 10) {
             PanelMoveArea().frame(height: 12)
@@ -155,17 +154,18 @@ struct ChatBar: View {
             HStack(spacing: 9) {
                 Button { model.pickFiles() } label: { Image(systemName: "plus").font(.system(size: 16, weight: .medium, design: .monospaced)).frame(width: 30, height: 30).background(theme.surface, in: Circle()) }
                     .buttonStyle(.plain).accessibilityLabel("Attach files")
-                Button { showModels.toggle() } label: {
+                Button { model.selectingModel = false; model.showingModelPicker.toggle() } label: {
                     HStack(spacing: 8) {
-                        Text(modelTitle(model.model)).lineLimit(1)
+                        Text(model.selectedModelReady ? modelTitle(model.model) : "Choose model").lineLimit(1)
                         EffortGauge(effort: model.preferences.effort).frame(width: 18, height: 16).accessibilityHidden(true)
                     }
                         .font(.system(size: 12, weight: .medium, design: .monospaced)).padding(.horizontal, 11).frame(height: 29).background(theme.surface, in: Capsule())
+                        .overlay(Capsule().stroke(model.selectingModel ? accent : .clear, lineWidth: 1.5))
                 }.buttonStyle(.plain).accessibilityLabel("Effort and model")
                     .accessibilityValue("\(modelTitle(model.model)), \(model.preferences.effort.title) effort")
                     .help("\(model.preferences.effort.title) effort")
-                    .popover(isPresented: $showModels, arrowEdge: .top) { ModelPopover(model: model, close: { showModels = false }) }
-                Button { showModels = false; model.showHistory() } label: {
+                    .popover(isPresented: $model.showingModelPicker, arrowEdge: .top) { ModelPopover(model: model, close: { model.showingModelPicker = false }) }
+                Button { model.showingModelPicker = false; model.showHistory() } label: {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 14, design: .monospaced)).foregroundStyle(.secondary).frame(width: 30, height: 30)
                 }.buttonStyle(.plain).help("Previous chats (→ when the message is empty)").accessibilityLabel("Previous chats")
                 Button { model.webSearch.toggle() } label: {
@@ -223,26 +223,38 @@ struct ModelPopover: View {
     private var accent: Color { theme.accent }
     @ObservedObject var model: ChatModel
     let close: () -> Void
-    var effort: Binding<Double> { Binding(get: { Double(Effort.allCases.firstIndex(of: model.preferences.effort) ?? 0) }, set: { model.preferences.effort = Effort.allCases[min(2, max(0, Int($0.rounded())))] }) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("Thinking effort"); Spacer(); Text(model.preferences.effort.title).frame(width: 52, alignment: .trailing).foregroundStyle(.secondary) }.font(.system(size: 12, weight: .medium, design: .monospaced))
-            Slider(value: effort, in: 0...2, step: 1).tint(accent).accessibilityLabel("Thinking effort")
-            HStack { Text("Low"); Spacer(); Text("Medium"); Spacer(); Text("High") }.font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            Text("Thinking effort").font(.system(size: 12, weight: .medium, design: .monospaced))
+            HStack(spacing: 3) {
+                ForEach(Effort.allCases, id: \.self) { effort in
+                    Button { model.preferences.effort = effort } label: {
+                        Text(effort.title).font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .frame(maxWidth: .infinity).padding(.vertical, 7)
+                            .foregroundStyle(model.preferences.effort == effort ? accent : theme.text.opacity(0.6))
+                            .background(model.preferences.effort == effort ? accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                    }.buttonStyle(.plain).accessibilityLabel("\(effort.title) effort")
+                        .accessibilityAddTraits(model.preferences.effort == effort ? .isSelected : [])
+                }
+            }.padding(3).background(theme.surface, in: RoundedRectangle(cornerRadius: 8))
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Provider.allCases) { provider in
-                        Text(provider.title.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary).padding(.top, 8)
-                        ForEach(model.catalogs[provider]?.models ?? provider.defaults, id: \.self) { id in
-                            Button {
-                                model.preferences.provider = provider; model.preferences.models[provider.rawValue] = id; close()
-                            } label: {
-                                HStack { Text(modelTitle(id)).lineLimit(1); Spacer(); if model.provider == provider && model.model == id { Image(systemName: "checkmark").foregroundStyle(accent) } }
-                                    .font(.system(size: 12, design: .monospaced)).padding(.vertical, 7).padding(.horizontal, 6).frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }.buttonStyle(.plain)
-                        }
+                    if model.selectableModels.isEmpty {
+                        Text("Connect a provider in Settings to choose models.").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+                    }
+                    ForEach(model.selectableModels) { choice in
+                        Button { model.selectModel(choice); close() } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(modelTitle(choice.model)).lineLimit(1)
+                                    Text(choice.provider.title).font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if model.provider == choice.provider && model.model == choice.model { Image(systemName: "checkmark").foregroundStyle(accent) }
+                            }.font(.system(size: 12, design: .monospaced)).padding(.vertical, 7).padding(.horizontal, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
                     }
                 }
             }.frame(maxHeight: 280)

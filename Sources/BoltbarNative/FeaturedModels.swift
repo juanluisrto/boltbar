@@ -1,7 +1,7 @@
 import Foundation
 
-/// Product policy, separate from availability: the API has no "flagship" flag.
-/// Stable aliases advance automatically within these three approved families.
+/// Bundled suggestions and display-name helpers. The synced catalog and user
+/// shortlist are independent of these defaults.
 enum FeaturedModels {
     static let families = ["astra", "sol", "luna"]
     static let fallback = ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"]

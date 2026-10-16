@@ -48,7 +48,7 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(GrowingEditor.height(for: 19, manual: 80), 80)
     }
     func testUnsupportedModelsAreFiltered() {
-        for id in ["gpt-4.1", "gpt-4o", "text-embedding-3-large", "gpt-6-audio", "gpt-6-realtime"] { XCTAssertFalse(Provider.openai.accepts(id)) }
+        for id in ["text-embedding-3-large", "gpt-6-audio", "gpt-6-realtime"] { XCTAssertFalse(Provider.openai.accepts(id)) }
         XCTAssertFalse(Provider.anthropic.accepts("claude-3-7-sonnet"))
         XCTAssertTrue(Provider.openai.accepts("gpt-6.1-sol"))
         XCTAssertTrue(Provider.anthropic.accepts("claude-sonnet-5-5"))

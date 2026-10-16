@@ -101,7 +101,7 @@ final class AppearanceTests: XCTestCase {
             if theme.isDark { model.appearance.darkTheme = theme } else { model.appearance.lightTheme = theme }
             model.panelWidth = 700
             try await capture(ChatBar(model: model), name: "theme-\(theme.rawValue)", size: NSSize(width: 700, height: 460))
-            try await capture(SettingsView(model: model), name: "settings-\(theme.rawValue)", size: NSSize(width: 600, height: 700))
+            try await capture(SettingsView(updater: AppUpdater(model: model), model: model), name: "settings-\(theme.rawValue)", size: NSSize(width: 600, height: 700))
             try await capture(HistoryPane(model: model, close: {}).padding(16).background(theme.palette.background),
                               name: "history-\(theme.rawValue)", size: NSSize(width: 420, height: 260))
         }

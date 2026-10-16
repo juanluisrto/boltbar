@@ -2,7 +2,7 @@ import AppKit
 import Carbon
 import SwiftUI
 
-private struct SettingsSection<Content: View>: View {
+struct SettingsSection<Content: View>: View {
     @Environment(\.boltbarTheme) private var theme
     var title: String?
     let content: Content
@@ -32,8 +32,6 @@ struct ProviderSettings: View {
                 model.preferences.transports[provider.rawValue] = $0
                 Task { await model.refresh() }
             }), options: Transport.allCases, title: { $0.title })
-            InterfacePicker(label: "Default model", selection: Binding(get: { model.preferences.model(provider) }, set: { model.preferences.models[provider.rawValue] = $0 }),
-                            options: model.catalogs[provider]?.models ?? provider.defaults, title: modelTitle)
             Group {
                 Button("Allow access to saved key") {
                     Task {
@@ -64,6 +62,7 @@ struct ProviderSettings: View {
 }
 
 struct SettingsView: View {
+    @ObservedObject var updater: AppUpdater
     @Environment(\.boltbarTheme) private var theme
     @ObservedObject var model: ChatModel
     var body: some View {
@@ -88,21 +87,21 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             SettingsSection(title: "Defaults") {
-                InterfacePicker(label: "Provider", selection: $model.preferences.provider, options: Provider.allCases, title: { $0.title })
+                InterfacePicker(label: "Model", selection: $model.defaultModel, options: [ModelChoice?.none] + model.selectableModels.map { Optional($0) }, title: { $0.map { modelTitle($0.model) } ?? "Latest used" })
                 InterfacePicker(label: "Thinking effort", selection: $model.preferences.effort, options: Effort.allCases, title: { $0.title })
                 HStack { Text("Global shortcut"); Spacer(); ShortcutRecorder(model: model).frame(width: 180, height: 28) }
                 Text("Every summon starts a new conversation. Escape hides the bar; ⌘N starts fresh; ⌘, opens Settings.").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(Provider.allCases) { ProviderSettings(model: model, provider: $0) }
-            SettingsSection {
-                Button(model.refreshing ? "Refreshing…" : "Refresh logins and models") { Task { await model.refresh() } }.disabled(model.refreshing)
-                Text("Keys: macOS Keychain, service com.boltbar.keys. Chats and attachments are saved locally in Application Support/Boltbar/Conversations and sent to the selected provider when you press Send.")
-                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("OpenAI shows the latest stable Astra, Sol and Luna available in your API catalog. It syncs at launch and every six hours; offline or CLI-only sessions use the last synced catalog or bundled defaults.")
-                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("API and CLI transports stream text and support images and text documents. PDFs require API mode.")
-                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ModelSettingsView(model: model)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Connections").font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    Spacer()
+                    Button(model.refreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh() } }.disabled(model.refreshing)
+                }
+                ForEach(Provider.allCases) { ProviderSettings(model: model, provider: $0) }
             }
+            UpdateSettings(updater: updater)
             }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
         }.font(.system(.body, design: .monospaced)).buttonStyle(InterfaceButtonStyle())
             .frame(minWidth: 520, minHeight: 540).background(theme.background)

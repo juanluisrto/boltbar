@@ -58,7 +58,8 @@ enum Providers {
             return ["role": message.role.rawValue, "content": parts]
         }
         if request.provider == .openai {
-            var body: [String: Any] = ["model": request.model, "stream": true, "reasoning": ["effort": request.effort.rawValue], "input": messages]
+            var body: [String: Any] = ["model": request.model, "stream": true, "input": messages]
+            if !request.model.hasPrefix("gpt-4") { body["reasoning"] = ["effort": request.effort.rawValue] }
             if request.webSearch {
                 body["tools"] = [["type": "web_search"]]
             }
@@ -138,17 +139,25 @@ enum Providers {
                 else { request.setValue(key, forHTTPHeaderField: "x-api-key"); request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version") }
                 let session = URLSession(configuration: .ephemeral)
                 defer { session.invalidateAndCancel() }
-                let (data, reply) = try await session.data(for: request)
-                guard (reply as? HTTPURLResponse)?.statusCode == 200 else { throw AppError("Model catalog unavailable; check API access.") }
-                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let rows = json?["data"] as? [[String: Any]] ?? []
+                var rows: [[String: Any]] = [], cursors = Set<String>()
+                while true {
+                    let (data, reply) = try await session.data(for: request)
+                    guard (reply as? HTTPURLResponse)?.statusCode == 200 else { throw AppError("Model catalog unavailable; check API access.") }
+                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    rows += json?["data"] as? [[String: Any]] ?? []
+                    guard provider == .anthropic, json?["has_more"] as? Bool == true else { break }
+                    guard let cursor = json?["last_id"] as? String, cursors.insert(cursor).inserted else { throw AppError("Model catalog pagination failed. Try refreshing again.") }
+                    var page = URLComponents(string: url)!
+                    page.queryItems = [URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "after_id", value: cursor)]
+                    request.url = page.url
+                }
                 let available = Array(Set(rows.compactMap { $0["id"] as? String }.filter(provider.accepts)))
-                let ids = provider == .openai ? FeaturedModels.latest(available) : available.sorted {
+                let ids = available.sorted {
                     let left = provider.defaults.firstIndex(of: $0) ?? 999, right = provider.defaults.firstIndex(of: $1) ?? 999
                     return left == right ? $0 < $1 : left < right
                 }
                 guard !ids.isEmpty else { throw AppError("No supported chat models returned by the provider.") }
-                return Catalog(models: ids, detail: provider == .openai ? "API · latest Astra, Sol and Luna · synced live" : "API · live catalog", ready: true, live: true)
+                return Catalog(models: ids, detail: "API · synced catalog", ready: true, live: true)
             }
             guard transport != .api else { throw AppError("Add an API key in Settings.") }
             let program = try CLI.program(provider)

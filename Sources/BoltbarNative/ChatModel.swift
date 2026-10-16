@@ -7,8 +7,19 @@ import SwiftUI
         didSet { if let data = try? JSONEncoder().encode(appearance) { defaults.set(data, forKey: "appearance") } }
     }
     @Published var preferences: Preferences { didSet { persist() } }
+    @Published var defaultModel: ModelChoice? {
+        didSet {
+            if let defaultModel, let data = try? JSONEncoder().encode(defaultModel) { defaults.set(data, forKey: "defaultModel") }
+            else { defaults.removeObject(forKey: "defaultModel") }
+        }
+    }
+    @Published var modelList: [ModelChoice] = [] {
+        didSet { if let data = try? JSONEncoder().encode(modelList) { defaults.set(data, forKey: "modelList") } }
+    }
     @Published var catalogs: [Provider: Catalog] = [:]
-    @Published var draft = ""
+    @Published var draft = "" { didSet { if !draft.isEmpty { selectingModel = false } } }
+    @Published var selectingModel = false
+    @Published var showingModelPicker = false
     @Published var attachments: [Attachment] = []
     @Published var messages: [Message] = [] { didSet { conversationDirty = true } }
     @Published var history: [ConversationSummary] = []
@@ -51,6 +62,7 @@ import SwiftUI
 
     init(defaults: UserDefaults = .standard, historyStore: ConversationStore? = nil, streamer: @escaping Streamer = Providers.stream) {
         self.defaults = defaults
+        defaultModel = defaults.data(forKey: "defaultModel").flatMap { try? JSONDecoder().decode(ModelChoice.self, from: $0) }
         appearance = defaults.data(forKey: "appearance").flatMap { try? JSONDecoder().decode(AppearancePreferences.self, from: $0) } ?? AppearancePreferences()
         self.historyStore = historyStore
         self.history = historyStore?.summaries ?? []
@@ -59,14 +71,34 @@ import SwiftUI
         preferences = defaults.data(forKey: "preferences").flatMap { try? JSONDecoder().decode(Preferences.self, from: $0) } ?? Preferences()
         preferences.models.removeValue(forKey: "cursor"); preferences.transports.removeValue(forKey: "cursor")
         for provider in Provider.allCases {
-            if !provider.accepts(preferences.model(provider)) { preferences.models[provider.rawValue] = provider.defaults[0] }
             let cached = defaults.stringArray(forKey: "catalog.\(provider.rawValue)")
-            let models = provider == .openai ? FeaturedModels.latest(cached ?? provider.defaults) : cached ?? provider.defaults
+            let models = (cached ?? provider.defaults).filter(provider.accepts)
             catalogs[provider] = Catalog(models: models, detail: "Checking login…", ready: false)
-            if !models.contains(preferences.model(provider)), let replacement = replacementModel(preferences.model(provider), in: models) {
-                preferences.models[provider.rawValue] = replacement
-            }
+
         }
+        let saved = defaults.data(forKey: "modelList").flatMap { try? JSONDecoder().decode([ModelChoice].self, from: $0) }
+        var seen = Set<ModelChoice>()
+        modelList = (saved ?? ModelChoice.defaults).filter { seen.insert($0).inserted }
+        if modelList.isEmpty { modelList = ModelChoice.defaults }
+        if let data = try? JSONEncoder().encode(modelList) { defaults.set(data, forKey: "modelList") }
+    }
+    func selectModel(_ choice: ModelChoice) {
+        preferences.provider = choice.provider; preferences.models[choice.provider.rawValue] = choice.model
+    }
+    func addModel(_ choice: ModelChoice) {
+        guard choice.provider.accepts(choice.model), !modelList.contains(choice) else { return }
+        modelList.append(choice)
+    }
+    func removeModel(_ choice: ModelChoice) {
+        guard modelList.count > 1 else { return }
+        modelList.removeAll { $0 == choice }
+        if defaultModel == choice { defaultModel = nil }
+        if provider == choice.provider && model == choice.model, let first = modelList.first { selectModel(first) }
+    }
+    func moveModel(_ source: ModelChoice, to target: ModelChoice) {
+        guard source != target, let from = modelList.firstIndex(of: source), let to = modelList.firstIndex(of: target) else { return }
+        var reordered = modelList; reordered.remove(at: from)
+        reordered.insert(source, at: to); modelList = reordered
     }
     func enableLocalHistory() {
         do { historyStore = try .local(); history = historyStore?.summaries ?? [] }
@@ -74,6 +106,17 @@ import SwiftUI
     }
     var provider: Provider { preferences.provider }
     var model: String { preferences.model(provider) }
+    var selectableModels: [ModelChoice] {
+        modelList.filter { choice in
+            guard let catalog = catalogs[choice.provider], catalog.ready else { return false }
+            return !catalog.live || catalog.models.contains(choice.model)
+        }
+    }
+    var selectedModelReady: Bool { selectableModels.contains(ModelChoice(provider: provider, model: model)) }
+    private func applyStartingModel() {
+        if let defaultModel, selectableModels.contains(defaultModel) { selectModel(defaultModel) }
+        else if !selectedModelReady, let first = selectableModels.first { selectModel(first) }
+    }
     var canSearchWeb: Bool { provider == .anthropic || preferences.transport(provider) != .cli }
     var webSearchActive: Bool { webSearch && canSearchWeb }
     var filteredHistory: [ConversationSummary] {
@@ -82,7 +125,26 @@ import SwiftUI
         return history.filter { ids.contains($0.id) }
     }
     var historyHeight: CGFloat { manualHistoryHeight ?? min(308, max(88, CGFloat(history.count) * 44)) }
+    func cycleModel(_ direction: Int) {
+        guard !streaming, !showingHistory, draft.isEmpty || showingModelPicker else { return }
+        let choices = selectableModels
+        guard !choices.isEmpty else { return }
+        let current = choices.firstIndex { $0.provider == provider && $0.model == model }
+        let index = current.map { ($0 + direction + choices.count) % choices.count } ?? (direction > 0 ? 0 : choices.count - 1)
+        selectModel(choices[index])
+        selectingModel = !showingModelPicker
+    }
+    func stepEffort(_ direction: Int) {
+        guard !streaming else { return }
+        let levels = Effort.allCases
+        let current = levels.firstIndex(of: preferences.effort) ?? 0
+        preferences.effort = levels[min(levels.count - 1, max(0, current + direction))]
+    }
+    @discardableResult func endModelSelection() -> Bool {
+        let active = selectingModel || showingModelPicker; selectingModel = false; showingModelPicker = false; return active
+    }
     func showHistory(preservingSearch: Bool = false) {
+        selectingModel = false; showingModelPicker = false
         saveConversation()
         if !preservingSearch { historyQuery = ""; selectedHistoryID = nil }
         showingHistory = true; filterHistory()
@@ -126,18 +188,19 @@ import SwiftUI
                 var catalog = received
                 if catalog.live { defaults.set(catalog.models, forKey: "catalog.\(provider.rawValue)") }
                 else if let cached = defaults.stringArray(forKey: "catalog.\(provider.rawValue)") {
-                    catalog.models = provider == .openai ? FeaturedModels.latest(cached) : cached
+                    catalog.models = cached.filter(provider.accepts)
                     catalog.detail = catalog.detail.replacingOccurrences(of: "fallback catalog", with: "cached catalog").replacingOccurrences(of: "Fallback catalog.", with: "Using the last synced catalog.")
                 }
                 catalogs[provider] = catalog
-                if !catalog.models.contains(preferences.model(provider)), let first = replacementModel(preferences.model(provider), in: catalog.models) {
-                    preferences.models[provider.rawValue] = first
-                }
+
             }
         }
         refreshing = false
+        if messages.isEmpty && draft.isEmpty && !streaming { applyStartingModel() }
     }
     func reset() {
+        applyStartingModel()
+        selectingModel = false; showingModelPicker = false
         stop()
         generation = UUID(); task?.cancel(); task = nil
         draft = ""; attachments = []; messages = []; streaming = false; error = nil
@@ -151,11 +214,6 @@ import SwiftUI
         generation = UUID(); task?.cancel(); task = nil; streaming = false
         for index in messages.indices where messages[index].pending { messages[index].pending = false }
         saveConversation()
-    }
-    private func replacementModel(_ requested: String, in models: [String]) -> String? {
-        if let family = FeaturedModels.parts(requested)?.family,
-           let sameFamily = models.first(where: { FeaturedModels.parts($0)?.family == family }) { return sameFamily }
-        return models.first
     }
     func saveConversation() {
         guard deletingConversationID != conversationID, conversationDirty, messages.contains(where: { $0.role == .user }), let historyStore else { return }
@@ -201,8 +259,7 @@ import SwiftUI
             guard generation == current else { return false }
             messages = record.messages; conversationID = record.summary.id; conversationCreated = record.summary.createdAt
             preferences.provider = record.provider; preferences.effort = record.effort
-            let available = catalogs[record.provider]?.models ?? record.provider.defaults
-            preferences.models[record.provider.rawValue] = available.contains(record.model) ? record.model : replacementModel(record.model, in: available)
+            preferences.models[record.provider.rawValue] = record.model
             preferences.transports[record.provider.rawValue] = record.transport
             draft = ""; attachments = []; error = nil; lastRequest = nil
             inputHeight = 26; manualInputHeight = 26; manualThreadHeight = nil; threadHeight = 44

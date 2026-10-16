@@ -10,13 +10,18 @@ if [ "${BOLTBAR_UNIVERSAL:-0}" = 1 ]; then
   done
   lipo -create .build/universal/Boltbar.arm64 .build/universal/Boltbar.x86_64 -output .build/universal/Boltbar
   BINARY=.build/universal/Boltbar
+  ARTIFACTS=.build/arm64/artifacts
 else
   swift build -c release
   BINARY=.build/release/Boltbar
+  ARTIFACTS=.build/artifacts
 fi
 APP="build/Boltbar.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/Boltbar"
+mkdir -p "$APP/Contents/Frameworks"
+FRAMEWORK="$ARTIFACTS/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+ditto "$FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/icon.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -34,5 +39,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-codesign --force --sign "${BOLTBAR_SIGN_IDENTITY:--}" "$APP"
+python3 scripts/configure-bundle.py "$APP/Contents/Info.plist"
+IDENTITY="${BOLTBAR_SIGN_IDENTITY:--}"
+# Sign nested executables inside-out; --deep signing can miss helper entitlements.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+for PART in "$SPARKLE/XPCServices/Downloader.xpc" "$SPARKLE/XPCServices/Installer.xpc" "$SPARKLE/Autoupdate" "$SPARKLE/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework" "$APP"; do
+  if [ "$IDENTITY" = - ]; then
+    codesign --force --sign "$IDENTITY" "$PART"
+  else
+    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$PART"
+  fi
+done
+codesign --verify --deep --strict "$APP"
 printf '%s\n' "$PWD/$APP"
