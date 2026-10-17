@@ -115,6 +115,7 @@ struct ChatBar: View {
     @Environment(\.boltbarTheme) private var theme
     private var accent: Color { theme.accent }
     @ObservedObject var model: ChatModel
+    @State private var followsStream = true
     var body: some View {
         VStack(spacing: 10) {
             PanelMoveArea().frame(height: 12)
@@ -129,10 +130,16 @@ struct ChatBar: View {
                             Color.clear.frame(height: 1).id("bottom")
                         }.frame(maxWidth: .infinity, alignment: .leading)
                             .background(GeometryReader { Color.clear.preference(key: ThreadHeightKey.self, value: $0.size.height) })
+                            .background(ChatScrollObserver { followsStream = $0 })
                     }.frame(height: model.manualThreadHeight ?? min(330, max(44, model.threadHeight)))
                         .onPreferenceChange(ThreadHeightKey.self) { model.threadHeight = $0 }
-                        .onChange(of: model.messages.last?.text) { _ in reader.scrollTo("bottom", anchor: .bottom) }
-                        .onChange(of: model.messages.count) { _ in reader.scrollTo("bottom", anchor: .bottom) }
+                        .onChange(of: model.messages.last?.text) { _ in
+                            if followsStream { reader.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .onChange(of: model.messages.count) { _ in
+                            followsStream = true
+                            reader.scrollTo("bottom", anchor: .bottom)
+                        }
                 }
                 Rectangle().fill(theme.border).frame(height: 1)
             }
