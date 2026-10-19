@@ -1,7 +1,8 @@
 // Boltbar's trailer as a pure function of time: `frame(t)` paints the whole
 // 1920×1080 stage for any t, so the page previews it and render.mjs captures
 // it frame by frame. Cuts land on a 120 BPM grid (one beat = 0.5 s).
-import { createBar, highlightHTML, totalLength, AMBER, THEMES, THEME_ORDER, withAccent, esc } from "/boltbar/bar.js";
+import { createBar, highlightHTML, totalLength, AMBER, THEMES, withAccent, esc } from "/boltbar/bar.js";
+import { HISTORY, dateLabel, matches } from "/boltbar/history-data.js";
 
 export const DURATION = 36;
 export const FPS = 60;
@@ -69,29 +70,30 @@ const MODEL_ROLL = ["Claude Haiku 5.5", "GPT-6 Luna", "Claude Sonnet 5.5", "GPT-
 const MODEL_BEATS = [13.5, 14, 14.5, 15, 15.5, 16];
 const EFFORT_BEATS = [16.5, 17, 17.5];
 
-const MINI = {
-  paper: { q: "Translate “see you tomorrow” to Japanese", a: [{ kind: "p", text: "**また明日** (mata ashita) — casual and friendly." }], model: "Claude Sonnet 5.5", effort: 0, author: "Anthropic" },
-  mist: { q: "Regex for an ISO date?", a: [{ kind: "code", lang: "regex", code: "^\\d{4}-\\d{2}-\\d{2}$" }], model: "GPT-6.1 Sol", effort: 1, author: "OpenAI" },
-  graphite: { q: "Why does this crash?", a: [{ kind: "p", text: "`work` is captured strongly — use `[weak self]` in the closure." }], model: "Claude Opus 5.5", effort: 2, author: "Anthropic" },
-  midnight: { q: "Plan a day in Kyoto", a: [{ kind: "p", text: "**Dawn** Fushimi Inari. **Noon** Nishiki market. **Dusk** Gion." }], model: "GPT-6 Astra", effort: 1, author: "OpenAI" },
-};
+// Previous chats: → opens them, ↓ ↓ browses, "kyoto" finds two (one only by
+// its content), → reopens the plan.
+const TODAY = new Date(2026, 9, 19);
+const CHATS = HISTORY.map((c) => ({ id: c.id, title: c.title, date: dateLabel(c, TODAY) }));
+const KYOTO = HISTORY.find((c) => c.id === "kyoto");
+const SEARCH = "kyoto";
+const HISTORY_OPEN = 19.35, BROWSE_BEATS = [20.0, 20.4], TYPE_START = 20.85, TYPE_END = 21.55, OPEN_AT = 22.3;
 
 const TITLES = [
-  { text: "Mid-thought.", at: 0.5, out: 1.85, x: 960, y: 520, size: 168 },
-  { text: "Mid-code.", at: 2.0, out: 3.6, x: 960, y: 520, size: 168 },
-  { text: "Boltbar", at: 5.45, out: 6.85, x: 960, y: 370, size: 150, weight: 650, stagger: 0.04 },
-  { text: "Ask anything.", at: 7.75, out: 12.55, x: 120, y: 430, size: 86, align: "left" },
-  { text: "From anywhere.", at: 9.9, out: 12.55, x: 120, y: 540, size: 86, align: "left", color: AMBER },
-  { text: "GPT and Claude. One bar.", at: 13.55, out: 15.95, x: 960, y: 330, size: 104 },
-  { text: "Your API keys —", at: 16.2, out: 18.75, x: 960, y: 300, size: 84 },
-  { text: "or the Claude Code and Codex login you already have.", at: 16.7, out: 18.75, x: 960, y: 392, size: 44, weight: 500, stagger: 0.03, color: "rgba(255,255,255,0.72)" },
-  { text: "Native to macOS.", at: 19.55, out: 21.9, x: 960, y: 175, size: 96 },
-  { text: "Swift. 3 MB. Instant.", at: 22.0, out: 24.6, x: 960, y: 175, size: 96, stagger: 0.5, accent: [1] },
-  { text: "Gone when you’re done.", at: 26.25, out: 27.6, x: 960, y: 520, size: 116 },
-  { text: "Keys in Keychain.", at: 27.75, out: 28.95, x: 960, y: 470, size: 92 },
-  { text: "Chats on your Mac.", at: 28.0, out: 28.95, x: 960, y: 580, size: 92, color: AMBER },
-  { text: "Boltbar", at: 29.95, out: 99, x: 960, y: 640, size: 128, weight: 650, stagger: 0.04 },
-  { text: "Free & open source · macOS 13+", at: 31.05, out: 99, x: 960, y: 858, size: 30, weight: 450, stagger: 0.03, color: "rgba(255,255,255,0.7)" },
+  { text: "Mid-thought.", at: 0.5, out: 1.85, x: 960, y: 520, size: 150 },
+  { text: "Mid-code.", at: 2.0, out: 3.6, x: 960, y: 520, size: 150 },
+  { text: "Boltbar", at: 5.45, out: 6.85, x: 960, y: 370, size: 140, weight: 650, stagger: 0.04 },
+  { text: "Ask anything.", at: 7.75, out: 12.55, x: 110, y: 430, size: 74, align: "left" },
+  { text: "From anywhere.", at: 9.9, out: 12.55, x: 110, y: 530, size: 74, align: "left", color: AMBER },
+  { text: "GPT and Claude. One bar.", at: 13.55, out: 15.95, x: 960, y: 330, size: 92 },
+  { text: "Your API keys —", at: 16.2, out: 18.75, x: 960, y: 300, size: 80 },
+  { text: "or the Claude Code and Codex login you already have.", at: 16.7, out: 18.75, x: 960, y: 392, size: 38, weight: 500, stagger: 0.03, color: "rgba(255,255,255,0.72)" },
+  { text: "Every chat, one key away.", at: 19.55, out: 20.45, x: 960, y: 150, size: 76 },
+  { text: "Search every message.", at: 20.9, out: 24.6, x: 960, y: 150, size: 76, accent: [1, 2] },
+  { text: "Gone when you’re done.", at: 26.25, out: 27.6, x: 960, y: 520, size: 100 },
+  { text: "Keys in Keychain.", at: 27.75, out: 28.95, x: 960, y: 470, size: 84 },
+  { text: "Chats on your Mac.", at: 28.0, out: 28.95, x: 960, y: 580, size: 84, color: AMBER },
+  { text: "Boltbar", at: 29.95, out: 99, x: 960, y: 640, size: 120, weight: 650, stagger: 0.04 },
+  { text: "Free & open source · 3 MB · macOS 13+", at: 31.05, out: 99, x: 960, y: 858, size: 26, weight: 450, stagger: 0.03, color: "rgba(255,255,255,0.7)" },
 ];
 
 const KEYS = [
@@ -100,12 +102,15 @@ const KEYS = [
   { label: "return", x: 1300, y: 1015, w: 150, h: 58, at: 8.25, presses: [8.55], out: 8.95, size: 17 },
   { label: "↓", x: 960, y: 985, w: 74, at: 13.3, presses: MODEL_BEATS, out: 16.2, size: 30 },
   { label: "→", x: 960, y: 985, w: 74, at: 16.3, presses: EFFORT_BEATS, out: 18.3, size: 30 },
+  { label: "→", x: 960, y: 1015, w: 64, at: 19.05, presses: [HISTORY_OPEN], out: 19.75, size: 26 },
+  { label: "↓", x: 960, y: 1015, w: 64, at: 19.8, presses: BROWSE_BEATS, out: 20.7, size: 26 },
+  { label: "→", x: 960, y: 1015, w: 64, at: 21.9, presses: [OPEN_AT], out: 22.7, size: 26 },
   { label: "esc", x: 960, y: 1000, w: 120, h: 64, at: 25.25, presses: [25.7], out: 26.05, size: 20 },
   { label: "⌥", x: 905, y: 760, w: 70, at: 30.5, out: 99, size: 28 },
   { label: "space", x: 1030, y: 760, w: 160, h: 70, at: 30.6, out: 99, size: 18 },
 ];
 
-const ICON_SVG = `<svg viewBox="72 72 880 880" width="220" height="220" aria-hidden="true"><defs><linearGradient id="tp" x2="0" y2="1"><stop stop-color="#353638"/><stop offset="1" stop-color="#17181b"/></linearGradient><linearGradient id="tb" x2="0" y2="1"><stop stop-color="#ffdc89"/><stop offset="1" stop-color="#f4ad39"/></linearGradient></defs><rect x="72" y="72" width="880" height="880" rx="198" fill="url(#tp)" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/><path d="M562 216 304 548Q296 560 312 560H474L430 798 724 450Q734 438 716 438H550L600 230Q604 212 586 212H574Q567 212 562 216Z" fill="url(#tb)"/></svg>`;
+const ICON_SVG = `<svg viewBox="72 72 880 880" width="220" height="220" aria-hidden="true"><defs> <linearGradient id="tp" x2="0" y2="1"> <stop stop-color="#353638"/> <stop offset="1" stop-color="#17181b"/> </linearGradient> <linearGradient id="tb" x2="0" y2="1"> <stop stop-color="#ffdc89"/> <stop offset="1" stop-color="#f4ad39"/> </linearGradient> </defs> <rect x="72" y="72" width="880" height="880" rx="198" fill="url(#tp)" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/> <g fill="url(#tb)" transform="translate(64.12 280.36) scale(0.51362)"> <path d="M882.19 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H765.94 L900.97 493 L700.97 493 L644.59 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H803.54 Z"/> <path d="M861.81 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H978.06 L843.03 409 L1043.03 409 L1099.41 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H940.46 Z"/> </g></svg>`;
 
 // ——— Building the stage once ——————————————————————————————————————
 
@@ -152,24 +157,9 @@ export function buildScene(stage) {
   const chip = createBar();
   chipAnchor.append(chip.el);
 
-  const ring = add(h("div", "t-ring"));
-  const ringItems = THEME_ORDER.map((name) => {
-    const item = h("div", "t-ringItem");
-    const bar = createBar();
-    const mini = MINI[name];
-    bar.update({
-      theme: THEMES[name],
-      messages: [
-        { id: "q", role: "user", blocks: [{ kind: "p", text: mini.q }] },
-        { id: "a", role: "assistant", author: mini.author, blocks: mini.a },
-      ],
-      model: mini.model,
-      effort: mini.effort,
-    });
-    item.append(bar.el, h("span", "t-ringLabel", esc(THEMES[name].label)));
-    ring.append(item);
-    return item;
-  });
+  const histAnchor = anchor();
+  const hist = createBar();
+  histAnchor.append(hist.el);
 
   const end = add(h("div", "t-end"));
   const icon = h("div", "t-icon", `<span class="t-iconGlow"></span>${ICON_SVG}`);
@@ -285,23 +275,24 @@ export function buildScene(stage) {
       chip.update({ theme: TRAILER_THEME, caret: Math.floor(t * 2) % 2 === 0, modelHTML, effort, selectingModel: t > 13.35 && t < 18.4 });
     }
 
-    // Themes: four bars on a turning ring.
-    const s5 = fade(t, 19.0, 19.5, 24.55, 25.0);
-    ring.style.display = t >= 19 && t < 25.1 ? "" : "none";
-    if (t >= 19 && t < 25.1) {
-      css(ring, { opacity: String(s5), transform: `translateY(${(1 - easeOut(prog(t, 19, 19.6))) * 80}px) scale(${lerp(0.92, 1, easeOut(prog(t, 19, 20)))})` });
-      const turn = [20.5, 21.75, 23.0].reduce((acc, b) => acc + easeInOut(prog(t, b, b + 0.6)), 0);
-      ringItems.forEach((item, i) => {
-        // Graphite starts in front; each turn brings the next theme round.
-        const a = (((((i - 2 - turn) * 90) % 360) + 540) % 360 - 180) * (Math.PI / 180);
-        const front = (Math.cos(a) + 1) / 2;
-        css(item, {
-          transform: `translateX(${Math.sin(a) * 640}px) translateZ(${(Math.cos(a) - 1) * 420}px) rotateY(${((a * 180) / Math.PI) * 0.6}deg) scale(1.3)`,
-          opacity: String(0.18 + front * 0.82),
-          filter: `blur(${(1 - front) * 2.5}px) brightness(${0.55 + front * 0.45})`,
-          zIndex: String(Math.round(front * 10)),
-        });
-      });
+    // Previous chats: a fresh bar opens them, browses, searches and reopens one.
+    const s5 = fade(t, 19.0, 19.3, 24.55, 25.0);
+    const inS5 = t >= 19 && t < 25.1;
+    histAnchor.style.display = inS5 ? "" : "none";
+    if (inS5) {
+      css(histAnchor, { left: "960px", top: "940px", opacity: String(s5), transform: `scale(${1.5 + prog(t, 19, 25) * 0.05})`, filter: `blur(${(1 - s5) * 8}px)` });
+      const blink = Math.floor(t * 2) % 2 === 0;
+      let history = null, messages = [];
+      if (t >= HISTORY_OPEN && t < OPEN_AT) {
+        const query = SEARCH.slice(0, Math.round(SEARCH.length * prog(t, TYPE_START, TYPE_END)));
+        const items = CHATS.filter((c) => matches(HISTORY.find((x) => x.id === c.id), query));
+        const browsed = BROWSE_BEATS.filter((b) => t >= b).length;
+        const selected = query ? items[0]?.id : CHATS[browsed]?.id;
+        history = { query, items, total: CHATS.length, selected, caret: (t > TYPE_START && t < TYPE_END + 0.1) || blink };
+      } else if (t >= OPEN_AT) {
+        messages = KYOTO.messages;
+      }
+      hist.update({ theme: TRAILER_THEME, history, messages, caret: blink, model: t >= OPEN_AT ? KYOTO.model : "Claude Opus 5.5", effort: 1, threadHeight: 440 });
     }
 
     // End card.

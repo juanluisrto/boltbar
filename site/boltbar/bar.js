@@ -130,6 +130,8 @@ export const ICONS = {
   copy: svg(13, '<rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/>'),
   check: svg(13, '<path d="m5 12.5 4.5 4.5L19 7"/>'),
   close: svg(10, '<path d="M6 6l12 12M18 6 6 18"/>'),
+  back: svg(15, '<path d="M15 5l-7 7 7 7"/>'),
+  compose: svg(16, '<path d="M11 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V13"/><path d="M17.8 3.7a1.9 1.9 0 0 1 2.7 2.7L12.6 14.3 9 15l.7-3.6Z"/>'),
 };
 
 /** The model chip's effort gauge; effort is 0 (low) … 2 (high), fractional while it sweeps. */
@@ -171,7 +173,8 @@ export function popoverHTML(models, current, effort) {
  * Build a panel and return `update(props)`, which repaints only what changed.
  * props: theme, messages, draft, caret, placeholder, model | modelHTML, effort,
  * selectingModel, webSearch, streaming, hasDraft, queue, queueStatus, hint,
- * popoverHTML, threadHeight.
+ * popoverHTML, threadHeight, and history: { query, items: [{ id, title, date }],
+ * total, selected, pending } to show the previous-chats browser instead.
  */
 export function createBar({ interactive = false } = {}) {
   const el = document.createElement("div");
@@ -180,6 +183,16 @@ export function createBar({ interactive = false } = {}) {
     <div class="bb-move"></div>
     <div class="bb-thread-wrap" hidden><div class="bb-thread"></div><div class="bb-divider"></div></div>
     <div class="bb-queue" hidden></div>
+    <div class="bb-history" hidden>
+      <div class="bb-history-head"><button type="button" class="bb-back" aria-label="Back to chat">${ICONS.back}</button><span class="bb-history-title">Previous chats</span><span class="bb-flex"></span><button type="button" class="bb-new" aria-label="New chat">${ICONS.compose}</button></div>
+      <div class="bb-search"><span class="bb-prompt">&gt;</span>${
+        interactive
+          ? '<input class="bb-search-input" type="text" placeholder="search all messages" aria-label="Search conversations" spellcheck="false" autocomplete="off">'
+          : '<span class="bb-search-text"></span><span class="bb-caret bb-search-caret"></span><span class="bb-search-placeholder">search all messages</span>'
+      }</div>
+      <div class="bb-history-list" role="listbox" aria-label="Previous conversations"></div>
+      <div class="bb-history-hint">↑ ↓ select · → / Return open · ⌫ delete · ← back</div>
+    </div>
     <div class="bb-composer">${
       interactive
         ? '<textarea class="bb-input" rows="1" spellcheck="false" aria-label="Message (simulated)"></textarea>'
@@ -188,7 +201,7 @@ export function createBar({ interactive = false } = {}) {
     <div class="bb-toolbar">
       <span class="bb-circle">${ICONS.plus}</span>
       <span class="bb-chip-wrap"><button type="button" class="bb-chip" aria-label="Effort and model"><span class="bb-model"></span><span class="bb-gauge"></span></button><span class="bb-popover-slot"></span></span>
-      <span class="bb-icon bb-history">${ICONS.history}</span>
+      <button type="button" class="bb-icon bb-clock" aria-label="Previous chats">${ICONS.history}</button>
       <button type="button" class="bb-icon bb-globe" aria-label="Search the web" aria-pressed="false">${ICONS.globe}</button>
       <span class="bb-flex"></span>
       <button type="button" class="bb-stop2" aria-label="Stop" hidden>${ICONS.stop(11)}</button>
@@ -200,6 +213,9 @@ export function createBar({ interactive = false } = {}) {
     draft: $(".bb-draft"), caret: $(".bb-caret"), placeholder: $(".bb-placeholder"), hint: $(".bb-hint"),
     chip: $(".bb-chip"), model: $(".bb-model"), gauge: $(".bb-gauge"), popover: $(".bb-popover-slot"),
     globe: $(".bb-globe"), stop2: $(".bb-stop2"), send: $(".bb-send"),
+    history: $(".bb-history"), list: $(".bb-history-list"), searchInput: $(".bb-search-input"),
+    searchText: $(".bb-search-text"), searchCaret: $(".bb-search-caret"), searchPlaceholder: $(".bb-search-placeholder"),
+    composer: $(".bb-composer"), toolbar: $(".bb-toolbar"),
   };
   const memo = {};
   const set = (key, value, apply) => {
@@ -210,10 +226,45 @@ export function createBar({ interactive = false } = {}) {
 
   function update(p) {
     set("theme", p.theme, (t) => applyTheme(el, t));
+    // The history browser replaces the thread, queue, composer and toolbar.
+    const h = p.history;
+    set("historyOpen", !!h, (open) => {
+      refs.history.hidden = !open;
+      refs.composer.hidden = refs.toolbar.hidden = open;
+      if (open) refs.threadWrap.hidden = refs.queue.hidden = true;
+      else {
+        refs.threadWrap.hidden = memo.messages === "";
+        refs.queue.hidden = memo.queue === "";
+      }
+    });
+    if (h) {
+      const rows = h.items.length
+        ? h.items.map((item) => {
+            const pending = item.id === h.pending;
+            return `<div class="bb-row${item.id === h.selected ? " on" : ""}" role="option" aria-selected="${item.id === h.selected}" data-chat="${esc(item.id)}"><span class="bb-row-title">${esc(item.title)}</span><span class="bb-row-date${pending ? " warn" : ""}">${pending ? "Press Delete again · Esc cancel" : esc(item.date)}</span></div>`;
+          }).join("")
+        : `<div class="bb-history-empty">No matching conversations</div>`;
+      set("historyRows", rows, (html) => (refs.list.innerHTML = html));
+      set("historyHeight", Math.min(308, Math.max(88, (h.total ?? h.items.length) * 44)), (v) => (refs.list.style.height = `${v}px`));
+      if (!interactive) {
+        set("search", h.query ?? "", (v) => {
+          refs.searchText.textContent = v;
+          refs.searchPlaceholder.hidden = !!v;
+        });
+        set("searchCaret", !!h.caret, (v) => (refs.searchCaret.style.visibility = v ? "visible" : "hidden"));
+      }
+      // Keep the selection in view by scrolling the list, never the page.
+      const on = refs.list.querySelector(".bb-row.on");
+      if (on) {
+        const top = on.offsetTop, bottom = top + on.offsetHeight;
+        if (top < refs.list.scrollTop) refs.list.scrollTop = top;
+        else if (bottom > refs.list.scrollTop + refs.list.clientHeight) refs.list.scrollTop = bottom - refs.list.clientHeight;
+      }
+    }
     const messages = p.messages ?? [];
     set("messages", messages.map(messageHTML).join(""), (html) => {
       refs.thread.innerHTML = html;
-      refs.threadWrap.hidden = html === "";
+      refs.threadWrap.hidden = html === "" || !!h;
     });
     set("threadHeight", p.threadHeight ?? 330, (h) => (refs.thread.style.maxHeight = `${h}px`));
     const queue = p.queue ?? [];
@@ -223,7 +274,7 @@ export function createBar({ interactive = false } = {}) {
       : "";
     set("queue", queueHTML, (html) => {
       refs.queue.innerHTML = html;
-      refs.queue.hidden = html === "";
+      refs.queue.hidden = html === "" || !!h;
     });
     if (interactive) {
       set("placeholder", p.placeholder ?? "Ask anything…", (v) => (refs.input.placeholder = v));

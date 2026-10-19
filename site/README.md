@@ -25,12 +25,17 @@ then open http://localhost:4173/boltbar/ (and http://localhost:4173/trailer/).
 
 ## The bar and its simulator
 
-`bar.js` and `bar.css` recreate the panel from `Views.swift`: palettes, the
-code highlighter, message and queue layout, the model chip with its effort
-gauge. `playground.js` drives it with the app's keys and rules (Return queues
-during a reply, ↑/↓ and ←/→, Esc and ⌥ Space with the summon rule of 0.5.0);
-`replies.js` holds the canned answers. Keep them in step with the app when its
-interface changes.
+`bar.js` and `bar.css` recreate the panel from `Views.swift` and
+`HistoryView.swift`: palettes, the code highlighter, message and queue layout,
+the model chip with its effort gauge, and the previous-chats browser.
+`playground.js` drives it with the app's keys and rules (Return queues during a
+reply, ↑/↓ and ←/→, → for history with search, ← back, ⌫ twice to delete, Esc
+and ⌥ Space with the summon rule of 0.5.0). `replies.js` holds the canned
+answers and `history-data.js` the example chats. Keep them in step with the app
+when its interface changes.
+
+The page uses no web fonts: everything is set in the system monospace
+(`ui-monospace`, SF Mono on a Mac), the typeface of Boltbar's own interface.
 
 ## The trailer
 

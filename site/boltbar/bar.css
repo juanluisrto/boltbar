@@ -413,12 +413,130 @@
   color: var(--bb-secondary);
 }
 
+/* Previous chats (HistoryView.swift) */
+.bb-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bb-history-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+}
+.bb .bb-back,
+.bb .bb-new {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+.bb-history-title {
+  font: 600 14px var(--bb-mono);
+}
+.bb-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding-left: 7px;
+  font: 12px var(--bb-mono);
+}
+.bb-search::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 1px;
+  background: var(--bb-border);
+}
+.bb-prompt {
+  width: 18px;
+  font: 500 15px var(--bb-mono);
+  color: var(--bb-accent);
+}
+.bb-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  caret-color: var(--bb-accent);
+}
+.bb-search-input::placeholder,
+.bb-search-placeholder {
+  color: #8e8e93;
+  opacity: 1;
+}
+.bb-search .bb-caret {
+  height: 14px;
+  vertical-align: -2px;
+}
+.bb-history-list {
+  position: relative;
+  margin-top: 6px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.bb-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+.bb-row.on::before {
+  content: "";
+  position: absolute;
+  inset: 2px 0;
+  z-index: -1;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bb-text) 9%, transparent);
+}
+.bb-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 500 12px var(--bb-mono);
+}
+.bb-row-date {
+  flex: none;
+  font: 11px var(--bb-mono);
+  color: color-mix(in srgb, var(--bb-text) 60%, transparent);
+}
+.bb-row-date.warn {
+  color: #e79891;
+}
+.bb-history-list {
+  isolation: isolate;
+}
+.bb-history-empty {
+  padding-top: 20px;
+  text-align: center;
+  font: 12px var(--bb-mono);
+  color: var(--bb-secondary);
+}
+.bb-history-hint {
+  font: 10px var(--bb-mono);
+  color: var(--bb-secondary);
+}
+
 /* Narrow screens keep the controls that matter. */
 @container bar (max-width: 420px) {
   .bb {
     padding-inline: 12px;
   }
-  .bb .bb-history {
+  .bb .bb-clock {
     display: none;
   }
   .bb .bb-chip {

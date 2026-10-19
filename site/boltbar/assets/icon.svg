@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="panel" x2="0" y2="1">
+      <stop stop-color="#353638"/>
+      <stop offset="1" stop-color="#17181b"/>
+    </linearGradient>
+    <linearGradient id="bolt" x2="0" y2="1">
+      <stop stop-color="#ffdc89"/>
+      <stop offset="1" stop-color="#f4ad39"/>
+    </linearGradient>
+  </defs>
+  <rect x="72" y="72" width="880" height="880" rx="198" fill="url(#panel)" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/>
+  <!-- Two pieces of a chain link; the lightning bolt is the gap between them. -->
+  <g fill="url(#bolt)" transform="translate(64.12 280.36) scale(0.51362)">
+    <path d="M882.19 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H765.94 L900.97 493 L700.97 493 L644.59 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H803.54 Z"/>
+    <path d="M861.81 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H978.06 L843.03 409 L1043.03 409 L1099.41 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H940.46 Z"/>
+  </g>
+</svg>

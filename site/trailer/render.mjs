@@ -149,3 +149,5 @@ try {
   await exited;
   rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
+// Lingering sockets must not keep a finished segment alive and stall the join.
+process.exit(0);

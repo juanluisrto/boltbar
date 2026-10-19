@@ -4,160 +4,111 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Boltbar: ask anything, from anywhere on your Mac</title>
-  <meta name="description" content="Boltbar is a native chat bar for macOS. Press ⌥ Space over any app, ask GPT or Claude, and get straight back to work. Free and open source.">
-  <link rel="icon" href="/boltbar/assets/icon-180.png">
+  <meta name="description" content="Boltbar is a small, native chat bar for macOS. Press ⌥ Space in any app, ask GPT or Claude, and get back to what you were doing. Free and open source.">
+  <link rel="icon" href="/boltbar/assets/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/boltbar/assets/icon-180.png" type="image/png">
   <link rel="apple-touch-icon" href="/boltbar/assets/icon-180.png">
   <meta property="og:title" content="Boltbar: ask anything, from anywhere on your Mac">
-  <meta property="og:description" content="A native chat bar for GPT and Claude. One shortcut, any app.">
+  <meta property="og:description" content="A small, native chat bar for GPT and Claude. One shortcut, any app.">
   <meta property="og:image" content="https://juanluis.me/boltbar/assets/og.png">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="theme-color" content="#0b0a09">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#161617">
   <link rel="stylesheet" href="/boltbar/bar.css">
   <link rel="stylesheet" href="/boltbar/styles.css">
 </head>
 <body>
-  <header class="site-header">
-    <div class="wrap">
-      <a class="brand" href="/boltbar"><img src="/boltbar/assets/icon-180.png" alt="" width="30" height="30">Boltbar</a>
-      <nav aria-label="Site">
-        <a class="hide-sm" href="#try">Try it</a>
-        <a class="hide-sm" href="#features">Features</a>
-        <a href="#install">Install</a>
-        <a href="https://github.com/juanluisrto/boltbar">GitHub ↗</a>
-      </nav>
-    </div>
+  <header class="top">
+    <a class="brand" href="/boltbar"><img src="/boltbar/assets/mark.svg" alt="" width="34" height="15">boltbar <span class="dim">0.5.0</span></a>
+    <nav aria-label="Site">
+      <a href="#try">try</a>
+      <a href="#install">install</a>
+      <a href="https://github.com/juanluisrto/boltbar">github</a>
+    </nav>
   </header>
 
   <main>
-    <section class="hero">
-      <div class="wrap">
-        <p class="eyebrow">Boltbar 0.5 · Free for macOS</p>
-        <h1>Ask anything.<br><span class="amber">From anywhere.</span></h1>
-        <p class="lede">Boltbar is a native chat bar for your Mac. Press <kbd>⌥</kbd> <kbd>Space</kbd> over any app, ask GPT or Claude, and get straight back to work.</p>
-        <div class="cta">
-          <a class="button primary" href="https://github.com/juanluisrto/boltbar/releases/latest">Download for Mac</a>
-          <a class="button" href="#try">Try it in your browser</a>
+    <section class="intro">
+      <h1>Ask anything, from anywhere.</h1>
+      <p>Boltbar is a small, native chat bar for macOS. Press <kbd>⌥ Space</kbd> in any app, ask GPT or Claude, and get back to what you were doing.</p>
+      <p class="actions">
+        <a class="download" href="https://github.com/juanluisrto/boltbar/releases/latest">Download for Mac</a>
+        <span class="dim">or</span>
+        <span class="command"><code>curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh</code><button type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh">copy</button></span>
+      </p>
+      <p class="dim small">macOS 13+ · Apple Silicon and Intel · signed and notarized · MIT</p>
+    </section>
+
+    <figure class="film">
+      <video src="/boltbar/assets/trailer.mp4" poster="/boltbar/assets/poster.jpg" autoplay muted loop playsinline preload="metadata" aria-label="Boltbar trailer: summoning the bar over a code editor, asking for Swift code, switching models and searching previous chats"></video>
+      <button type="button" class="pause" data-video-toggle>pause</button>
+    </figure>
+
+    <section id="try">
+      <h2>Try it</h2>
+      <p>This is the bar itself, rebuilt in your browser. Replies are canned and no model is called, but the keys work as they do on your Mac.</p>
+      <div class="playground" data-playground>
+        <div class="stage" data-stage data-visible="true">
+          <div class="bar-slot" data-bar></div>
+          <button type="button" class="hidden-note" data-hidden><span data-hidden-text>Boltbar is hidden.</span> Press ⌥ Space, or click here.</button>
         </div>
-        <p class="meta">macOS 13+ · Apple Silicon &amp; Intel · Signed &amp; notarized · Open source</p>
-      </div>
-      <div class="wrap trailer">
-        <div class="video">
-          <video src="/boltbar/assets/trailer.mp4" poster="/boltbar/assets/poster.jpg" autoplay muted loop playsinline preload="metadata" aria-label="Boltbar trailer: summoning the bar over a code editor, asking for Swift code, switching models and themes"></video>
-          <button type="button" class="video-toggle" aria-label="Pause the trailer" data-video-toggle>Pause</button>
+        <div class="under">
+          <p class="suggest"><span class="dim">ask:</span>
+            <button type="button" data-suggest="Write a debounce in Swift">write a debounce in swift</button>
+            <button type="button" data-suggest="What are the shortcuts?">what are the shortcuts?</button>
+            <button type="button" data-suggest="Is my data private?">is my data private?</button>
+            <button type="button" data-suggest="history">previous chats</button>
+          </p>
+          <p class="themes" role="radiogroup" aria-label="Theme"><span class="dim">theme:</span>
+            <button type="button" role="radio" data-theme="paper">paper</button>
+            <button type="button" role="radio" data-theme="mist">mist</button>
+            <button type="button" role="radio" data-theme="graphite">graphite</button>
+            <button type="button" role="radio" data-theme="midnight">midnight</button>
+          </p>
         </div>
+        <table class="keys">
+          <caption class="sr-only">Keys, ticked as you try them above</caption>
+          <tbody>
+            <tr data-skill="summon"><th scope="row"><kbd>⌥ Space</kbd></th><td>Open Boltbar over any app. If a reply is still coming, it returns where you left it.</td></tr>
+            <tr data-skill="hide"><th scope="row"><kbd>esc</kbd></th><td>Hide it.</td></tr>
+            <tr data-skill="send"><th scope="row"><kbd>↵</kbd></th><td>Send. <kbd>⇧ ↵</kbd> adds a line.</td></tr>
+            <tr data-skill="queue"><th scope="row"><kbd>↵</kbd> <span class="dim">again</span></th><td>While it answers, queue your next message. It goes out when the reply ends.</td></tr>
+            <tr data-skill="models"><th scope="row"><kbd>↑ ↓</kbd></th><td>Switch model, with the field empty.</td></tr>
+            <tr data-skill="effort"><th scope="row"><kbd>← →</kbd></th><td>Then set the thinking effort.</td></tr>
+            <tr data-skill="history"><th scope="row"><kbd>→</kbd></th><td>Open your previous chats.</td></tr>
+            <tr data-skill="search"><th scope="row"><span class="dim">type,</span> <kbd>→</kbd></th><td>Search every message and reopen a chat. <kbd>←</kbd> takes you back to the list.</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
-    <section id="try" class="try">
-      <div class="wrap">
-        <header class="section-head">
-          <p class="eyebrow">Try it</p>
-          <h2>The real interface, in your browser.</h2>
-          <p>Click into the bar and use the same keys as on your Mac. Replies are simulated here, and they explain Boltbar itself.</p>
-        </header>
-        <div class="playground" data-playground>
-          <div class="stage" data-stage data-visible="true">
-            <div class="bar-slot" data-bar></div>
-            <button type="button" class="hidden-note" data-hidden>
-              <span class="keys"><kbd>⌥</kbd><kbd>space</kbd></span>
-              <span><span data-hidden-text>Boltbar is hidden.</span> Press ⌥ Space, or click here.</span>
-            </button>
-          </div>
-          <div class="controls">
-            <div class="suggestions">
-              <button type="button" data-suggest="Write a debounce in Swift">Write a debounce in Swift</button>
-              <button type="button" data-suggest="What are the shortcuts?">What are the shortcuts?</button>
-              <button type="button" data-suggest="Is my data private?">Is my data private?</button>
-              <button type="button" data-suggest="How do I install it?">How do I install it?</button>
-            </div>
-            <div class="themes" role="radiogroup" aria-label="Theme">
-              <button type="button" role="radio" data-theme="paper" style="background:#F6F3EC;color:#39735C">Paper</button>
-              <button type="button" role="radio" data-theme="mist" style="background:#F1F5F9;color:#4268B3">Mist</button>
-              <button type="button" role="radio" data-theme="graphite" style="background:#1C1C1E;color:#A0CCB8">Graphite</button>
-              <button type="button" role="radio" data-theme="midnight" style="background:#151D2B;color:#A7B6F5">Midnight</button>
-            </div>
-          </div>
-          <ol class="guide">
-            <li data-skill="send"><span class="keys"><kbd>↵</kbd></span>Send a message</li>
-            <li data-skill="queue"><span class="keys"><kbd>↵</kbd></span>Type again while it answers: it queues</li>
-            <li data-skill="models"><span class="keys"><kbd>↑</kbd><kbd>↓</kbd></span>Switch models, with the field empty</li>
-            <li data-skill="effort"><span class="keys"><kbd>←</kbd><kbd>→</kbd></span>Then change the thinking effort</li>
-            <li data-skill="hide"><span class="keys"><kbd>esc</kbd></span>Hide the bar</li>
-            <li data-skill="summon"><span class="keys"><kbd>⌥</kbd><kbd>space</kbd></span>Bring it back: a new chat, unless it’s still answering</li>
-          </ol>
-          <p class="note">Simulated in your browser: no model is called. The real Boltbar sends your message straight to OpenAI or Anthropic.</p>
-        </div>
-      </div>
+    <section>
+      <h2>Also</h2>
+      <dl class="also">
+        <dt>accounts</dt><dd>Your OpenAI or Anthropic API keys, kept in the Keychain, or the Codex and Claude Code logins you already have.</dd>
+        <dt>attachments</dt><dd>Paste, drop or pick images, PDFs and text files. They stay with the message for follow-up questions.</dd>
+        <dt>web</dt><dd>Turn on the globe and the model searches when it needs to, citing its sources.</dd>
+        <dt>themes</dt><dd>Paper, Mist, Graphite and Midnight, with any accent colour.</dd>
+        <dt>size</dt><dd>Swift and AppKit. A 3 MB download, no Electron, no account.</dd>
+        <dt>updates</dt><dd>Signed, in-app, installed when you choose.</dd>
+      </dl>
     </section>
 
-    <section id="features" class="features">
-      <div class="wrap">
-        <header class="section-head">
-          <p class="eyebrow">Features</p>
-          <h2>A small bar with the whole toolkit.</h2>
-        </header>
-        <div class="grid">
-          <article><p class="tag">⌥ Space</p><h3>One shortcut, any app</h3><p>The bar floats over whatever you are doing. Esc hides it, and if a reply is still coming, ⌥ Space brings it back where you left it.</p></article>
-          <article><p class="tag">↑ ↓ ← →</p><h3>GPT and Claude, side by side</h3><p>OpenAI and Anthropic models in one shortlist. Switch with the arrow keys and set the thinking effort without reaching for the mouse.</p></article>
-          <article><p class="tag">Keychain · CLI</p><h3>Your keys, or your login</h3><p>Use your own API keys, kept in the macOS Keychain, or the Codex and Claude Code logins you already have.</p></article>
-          <article><p class="tag">Queue</p><h3>Keep typing</h3><p>Write follow-ups while it answers. They wait above the field and go out together; Return on an empty field sends them right away.</p></article>
-          <article><p class="tag">PNG · PDF · TXT</p><h3>Drop in anything</h3><p>Paste, drop or pick images, PDFs and text files. They stay attached to the message, so follow-up questions still see them.</p></article>
-          <article><p class="tag">Web</p><h3>Search with sources</h3><p>Turn on the globe and the model searches when it needs to, answering with numbered citations and the sites it used.</p></article>
-          <article><p class="tag">History</p><h3>Every chat, searchable</h3><p>Previous conversations open inside the bar. Filter by any word you remember; accents and case don’t matter.</p></article>
-          <article><p class="tag">Swift</p><h3>Truly native</h3><p>Swift and AppKit, a 3 MB download, four themes and signed in-app updates. No Electron, no account.</p></article>
-        </div>
-      </div>
+    <section>
+      <h2>Privacy</h2>
+      <p>Your keys stay in the Keychain. Chats and attachments stay on your Mac, in <code>~/Library/Application Support/Boltbar</code>. Boltbar talks to the provider you choose and to GitHub to check for updates. There are no analytics.</p>
     </section>
 
-    <section class="privacy">
-      <div class="wrap split">
-        <header class="section-head">
-          <p class="eyebrow">Privacy</p>
-          <h2>Yours, and only yours.</h2>
-        </header>
-        <ul class="points">
-          <li><strong>Keys stay in your Keychain.</strong> Boltbar never writes them to a file.</li>
-          <li><strong>Chats stay on your Mac.</strong> History and attachments live in your Library folder, not in a cloud.</li>
-          <li><strong>No account, no analytics.</strong> Boltbar talks to the provider you choose, and to GitHub to check for signed updates.</li>
-        </ul>
-      </div>
-    </section>
-
-    <section id="install" class="install">
-      <div class="wrap">
-        <header class="section-head">
-          <p class="eyebrow">Install</p>
-          <h2>Get Boltbar.</h2>
-          <p>macOS 13 Ventura or later, on Apple Silicon or Intel. Bring an OpenAI or Anthropic API key, or sign in with the Codex or Claude Code CLI.</p>
-        </header>
-        <div class="ways">
-          <article>
-            <h3>Download</h3>
-            <p>The signed and notarized DMG or ZIP, from the latest GitHub release.</p>
-            <a class="button primary" href="https://github.com/juanluisrto/boltbar/releases/latest">Download for Mac</a>
-          </article>
-          <article>
-            <h3>Terminal</h3>
-            <p>Verifies the release checksum and keeps any previous version as a backup.</p>
-            <div class="command">
-              <code>curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh</code>
-              <button type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh">Copy</button>
-            </div>
-          </article>
-        </div>
-      </div>
+    <section id="install">
+      <h2>Install</h2>
+      <p>Download the signed DMG or ZIP from the <a href="https://github.com/juanluisrto/boltbar/releases/latest">latest release</a>, or run:</p>
+      <p class="command block"><code>curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh</code><button type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh">copy</button></p>
+      <p>The script checks the release checksum and keeps any previous version as a backup. Boltbar needs macOS 13 Ventura or later, and an OpenAI or Anthropic API key or a Codex or Claude Code login.</p>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="wrap">
-      <p>Boltbar is open source under the MIT license. <a href="https://github.com/juanluisrto/boltbar">Source on GitHub</a>.</p>
-      <p>Made by <a href="https://juanluis.me">Juan Luis Ruiz-Tagle</a>.</p>
-    </div>
+  <footer class="bottom">
+    <p>MIT licensed. <a href="https://github.com/juanluisrto/boltbar">Source on GitHub</a>. Made by <a href="https://juanluis.me">Juan Luis Ruiz-Tagle</a>.</p>
   </footer>
 
   <script type="module">
@@ -167,7 +118,7 @@
     const video = document.querySelector("video");
     const toggle = document.querySelector("[data-video-toggle]");
     const sync = () => {
-      toggle.textContent = video.paused ? "Play" : "Pause";
+      toggle.textContent = video.paused ? "play" : "pause";
       toggle.setAttribute("aria-label", video.paused ? "Play the trailer" : "Pause the trailer");
     };
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) video.removeAttribute("autoplay"), video.pause();
@@ -179,8 +130,8 @@
     for (const button of document.querySelectorAll("[data-copy]")) {
       button.addEventListener("click", async () => {
         await navigator.clipboard.writeText(button.dataset.copy);
-        button.textContent = "Copied";
-        setTimeout(() => (button.textContent = "Copy"), 1500);
+        button.textContent = "copied";
+        setTimeout(() => (button.textContent = "copy"), 1500);
       });
     }
   </script>

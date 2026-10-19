@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>Boltbar trailer</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/boltbar/bar.css">
   <link rel="stylesheet" href="/trailer/trailer.css">
   <style>body { margin: 0; background: #000; }</style>
@@ -27,7 +24,6 @@
     const q = new URLSearchParams(location.search);
     const stage = document.getElementById("stage");
     const frame = buildScene(stage);
-    await Promise.all(["620 100px Geist", "450 30px Geist", "500 20px 'Geist Mono'"].map((f) => document.fonts.load(f)));
     await document.fonts.ready;
 
     if (q.has("render")) {

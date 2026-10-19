@@ -41,7 +41,7 @@
   overflow: hidden;
   background: #060607;
   color: #fff;
-  font-family: "Geist", -apple-system, system-ui, sans-serif;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 }
 .t-void {
   position: absolute;
@@ -281,33 +281,6 @@
   white-space: nowrap;
 }
 
-.t-ring {
-  position: absolute;
-  left: 960px;
-  top: 720px;
-  width: 0;
-  height: 0;
-  perspective: 2400px;
-  transform-style: preserve-3d;
-}
-.t-ringItem {
-  position: absolute;
-  bottom: 0;
-  left: -350px;
-  width: 700px;
-  transform-style: preserve-3d;
-}
-.t-ringLabel {
-  position: absolute;
-  top: calc(100% + 26px);
-  left: 0;
-  right: 0;
-  text-align: center;
-  font: 500 15px/1 "Geist Mono", ui-monospace, monospace;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.66);
-}
 
 /* ——— Type ——— */
 .t-scrim {
@@ -319,7 +292,7 @@
 .t-title {
   position: absolute;
   white-space: nowrap;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.03em;
   line-height: 1;
   color: #fff;
   text-shadow: 0 6px 40px rgba(0, 0, 0, 0.45);
@@ -343,7 +316,7 @@
     0 0 calc(var(--glow) * 90px) calc(var(--glow) * 10px) rgba(242, 196, 109, calc(var(--glow) * 0.55));
 }
 .t-keyLegend {
-  font: 500 1em/1 "Geist", -apple-system, system-ui, sans-serif;
+  font: 500 1em/1 ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.02em;
   color: #f1efe9;
 }
@@ -376,7 +349,7 @@
   right: 0;
   top: 905px;
   text-align: center;
-  font: 500 30px/1 "Geist Mono", ui-monospace, monospace;
+  font: 500 30px/1 ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.02em;
   color: #f2c46d;
 }
@@ -409,7 +382,7 @@
   align-items: center;
   gap: 12px;
   width: min(900px, 92vw);
-  font: 500 12px "Geist Mono", monospace;
+  font: 500 12px ui-monospace, "SF Mono", Menlo, monospace;
   color: #aaa;
 }
 .t-controls input {
