@@ -1,0 +1,428 @@
+/* Boltbar's panel, recreated for the web. Measurements follow Views.swift. */
+.bb {
+  --bb-secondary: color-mix(in srgb, var(--bb-text) 56%, transparent);
+  --bb-surface: color-mix(in srgb, var(--bb-text) 6%, transparent);
+  --bb-border: color-mix(in srgb, var(--bb-text) 12%, transparent);
+  --bb-mono: ui-monospace, "SF Mono", SFMono-Regular, "Geist Mono", Menlo, monospace;
+  --bb-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", system-ui, sans-serif;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 700px;
+  max-width: 100%;
+  padding: 9px 16px 14px;
+  border-radius: 19px;
+  background: var(--bb-bg);
+  color: var(--bb-text);
+  font-family: var(--bb-mono);
+  text-align: left;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.28),
+    0 24px 70px -18px rgba(0, 0, 0, 0.55),
+    0 8px 22px -10px rgba(0, 0, 0, 0.35);
+  -webkit-font-smoothing: antialiased;
+}
+.bb button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.bb [hidden] {
+  display: none !important;
+}
+.bb-move {
+  height: 12px;
+  flex: none;
+}
+.bb-flex {
+  flex: 1;
+}
+
+/* The newest text stays in view; older text slides up and out. */
+.bb-thread-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bb-thread {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+  overflow: hidden;
+}
+.bb-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 6px 0;
+  flex: none;
+}
+.bb-msg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+}
+.bb-label,
+.bb-badge {
+  font: 600 9px/1 var(--bb-mono);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--bb-secondary);
+}
+.bb-badge {
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--bb-text) 25%, transparent);
+  border-radius: 4px;
+}
+.bb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font: 14px/20px var(--bb-sans);
+}
+.bb-p {
+  margin: 0;
+}
+.bb-p code {
+  font: 12.5px var(--bb-mono);
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--bb-surface);
+}
+.bb-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 13px var(--bb-mono);
+  color: var(--bb-secondary);
+}
+.bb-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.6px solid var(--bb-border);
+  border-top-color: var(--bb-secondary);
+  animation: bb-spin 0.8s linear infinite;
+}
+@keyframes bb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.bb-code {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--bb-surface);
+}
+.bb-code-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font: 10px var(--bb-mono);
+  color: var(--bb-secondary);
+}
+.bb-pre {
+  margin: 0;
+  font: 12px/1.5 var(--bb-mono);
+  white-space: pre;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.bb-kw {
+  color: var(--bb-kw);
+}
+.bb-num {
+  color: var(--bb-num);
+}
+.bb-str {
+  color: var(--bb-str);
+}
+.bb-com {
+  color: var(--bb-com);
+}
+.bb-divider {
+  height: 1px;
+  flex: none;
+  background: var(--bb-border);
+}
+
+/* Queue */
+.bb-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bb-surface);
+  box-shadow: inset 0 0 0 1px var(--bb-border);
+}
+.bb-queue-head,
+.bb-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+}
+.bb-queue-status {
+  font: 10px var(--bb-mono);
+  color: var(--bb-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb .bb-send-now {
+  font: 500 11px/22px var(--bb-mono);
+  color: var(--bb-accent);
+  padding: 0 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--bb-accent) 12%, transparent);
+}
+.bb-queue-row {
+  font: 12px var(--bb-mono);
+}
+.bb-queue-text {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bb .bb-queue-remove {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--bb-secondary);
+}
+
+/* Composer */
+.bb-composer {
+  position: relative;
+  min-height: 26px;
+  padding-top: 2px;
+  font: 15px/22px var(--bb-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bb-placeholder {
+  color: #8e8e93;
+}
+.bb-caret {
+  display: inline-block;
+  width: 2px;
+  height: 18px;
+  margin-right: 1px;
+  vertical-align: -3px;
+  background: var(--bb-accent);
+}
+.bb-input {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  caret-color: var(--bb-accent);
+  overflow-y: auto;
+}
+.bb-input::placeholder {
+  color: #8e8e93;
+  opacity: 1;
+}
+.bb-hint {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  font: 11px var(--bb-mono);
+  color: var(--bb-secondary);
+  pointer-events: none;
+}
+
+/* Toolbar */
+.bb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 31px;
+}
+.bb-circle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--bb-surface);
+}
+.bb-chip-wrap {
+  position: relative;
+  min-width: 0;
+}
+.bb .bb-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 29px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--bb-surface);
+  font: 500 12px/1 var(--bb-mono);
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1.5px transparent;
+}
+.bb .bb-chip.on {
+  box-shadow: inset 0 0 0 1.5px var(--bb-accent);
+}
+.bb-model {
+  display: inline-grid;
+  min-width: 0;
+  overflow: hidden;
+}
+.bb-model > span {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-gauge {
+  display: flex;
+  flex: none;
+}
+.bb .bb-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--bb-secondary);
+}
+.bb .bb-globe.on {
+  color: var(--bb-accent);
+  background: color-mix(in srgb, var(--bb-accent) 12%, transparent);
+}
+.bb .bb-send,
+.bb .bb-stop2 {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 31px;
+  height: 31px;
+  border-radius: 50%;
+}
+.bb .bb-send {
+  background: var(--bb-accent);
+  color: var(--bb-on-accent);
+}
+.bb .bb-stop2 {
+  background: var(--bb-surface);
+}
+
+/* Model popover */
+.bb-popover {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bb-bg);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.3),
+    0 18px 50px -12px rgba(0, 0, 0, 0.5);
+}
+.bb-popover::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 40px;
+  border: 8px solid transparent;
+  border-top-color: var(--bb-bg);
+}
+.bb-pop-title {
+  font: 500 12px var(--bb-mono);
+}
+.bb-segmented {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--bb-surface);
+}
+.bb .bb-segmented button {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 6px;
+  font: 500 12px var(--bb-mono);
+  color: color-mix(in srgb, var(--bb-text) 60%, transparent);
+}
+.bb .bb-segmented button.on {
+  color: var(--bb-accent);
+  background: color-mix(in srgb, var(--bb-accent) 14%, transparent);
+}
+.bb-pop-divider {
+  height: 1px;
+  background: var(--bb-border);
+}
+.bb-models {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 230px;
+  overflow-y: auto;
+}
+.bb .bb-model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 6px;
+  border-radius: 6px;
+  font: 12px var(--bb-mono);
+  text-align: left;
+}
+.bb .bb-model-row:hover {
+  background: var(--bb-surface);
+}
+.bb .bb-model-row svg {
+  color: var(--bb-accent);
+}
+.bb-model-provider {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  color: var(--bb-secondary);
+}
+
+/* Narrow screens keep the controls that matter. */
+@container bar (max-width: 420px) {
+  .bb {
+    padding-inline: 12px;
+  }
+  .bb .bb-history {
+    display: none;
+  }
+  .bb .bb-chip {
+    gap: 6px;
+    padding: 0 9px;
+  }
+}

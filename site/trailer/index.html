@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Boltbar trailer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/boltbar/bar.css">
+  <link rel="stylesheet" href="/trailer/trailer.css">
+  <style>body { margin: 0; background: #000; }</style>
+</head>
+<body>
+  <!-- ?t=12.5 freezes a frame; ?render hands control to render.mjs. -->
+  <div class="t-previewRoot" id="root">
+    <div class="t-stageBox" id="box"><div class="t-stage" id="stage"></div></div>
+    <div class="t-controls" id="controls">
+      <button type="button" id="toggle">Pause</button>
+      <input type="range" id="seek" min="0" step="0.0166667">
+      <span id="time">0.00s</span>
+    </div>
+  </div>
+  <script type="module">
+    import { buildScene, DURATION, FPS } from "/trailer/trailer.js";
+    const q = new URLSearchParams(location.search);
+    const stage = document.getElementById("stage");
+    const frame = buildScene(stage);
+    await Promise.all(["620 100px Geist", "450 30px Geist", "500 20px 'Geist Mono'"].map((f) => document.fonts.load(f)));
+    await document.fonts.ready;
+
+    if (q.has("render")) {
+      const root = document.getElementById("root");
+      root.className = "t-renderRoot";
+      root.replaceChildren(stage);
+      window.__trailer = {
+        duration: DURATION,
+        fps: FPS,
+        render: (t) => new Promise((resolve) => { frame(t); requestAnimationFrame(() => requestAnimationFrame(resolve)); }),
+      };
+      frame(0);
+      window.__trailerReady = true;
+    } else {
+      const box = document.getElementById("box");
+      const seek = document.getElementById("seek");
+      const time = document.getElementById("time");
+      const toggle = document.getElementById("toggle");
+      seek.max = DURATION;
+      let playing = !q.has("t");
+      let t = Number(q.get("t") ?? 0);
+      let origin = performance.now() - t * 1000;
+      const fit = () => {
+        const s = Math.min(innerWidth / 1920, (innerHeight - 56) / 1080);
+        box.style.width = `${1920 * s}px`;
+        box.style.height = `${1080 * s}px`;
+        stage.style.transform = `scale(${s})`;
+      };
+      addEventListener("resize", fit);
+      fit();
+      toggle.onclick = () => {
+        playing = !playing;
+        origin = performance.now() - t * 1000;
+        toggle.textContent = playing ? "Pause" : "Play";
+      };
+      seek.oninput = () => {
+        t = Number(seek.value);
+        origin = performance.now() - t * 1000;
+      };
+      toggle.textContent = playing ? "Pause" : "Play";
+      const tick = (now) => {
+        if (playing) t = ((now - origin) / 1000) % DURATION;
+        frame(t);
+        seek.value = t;
+        time.textContent = `${t.toFixed(2)}s`;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+  </script>
+</body>
+</html>
