@@ -3,9 +3,12 @@ import SwiftUI
 import Carbon
 
 final class ChatPanel: NSPanel {
+    var onHide: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func cancelOperation(_ sender: Any?) { orderOut(nil) }
+    // Every way of hiding the bar (Esc, Settings) ends here.
+    override func orderOut(_ sender: Any?) { super.orderOut(sender); onHide?() }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -33,13 +36,14 @@ final class ChatPanel: NSPanel {
         panel.backgroundColor = .clear; panel.hasShadow = true
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
+        panel.onHide = { [weak model] in model?.barHidden() }
         let host = DropHostingView(rootView: ThemedView(model: model) { ChatBar(model: model) })
         host.registerForDraggedTypes([.fileURL, .png, .tiff]); host.accept = { [weak model] in model?.receive($0) ?? false }
         panel.contentView = host
         model.resize = { [weak self] in self?.fit($0) }
         model.openSettings = { [weak self] in self?.showSettings() }
         model.presentFilePicker = { [weak self] in self?.showAttachmentPicker() }
-        model.newConversation = { [weak self] in self?.show() }
+        model.newConversation = { [weak self] in self?.newChat() }
         model.focusComposer = { [weak self] in self?.focusComposer() }
         model.updateShortcut = { [weak self] key, modifiers, label in
             guard let self, self.register(key, modifiers) else { return false }
@@ -50,10 +54,10 @@ final class ChatPanel: NSPanel {
         InstallEventHandler(GetApplicationEventTarget(), { _, _, pointer in
             guard let pointer else { return noErr }
             let delegate = Unmanaged<AppDelegate>.fromOpaque(pointer).takeUnretainedValue()
-            MainActor.assumeIsolated { delegate.show() }; return noErr
+            MainActor.assumeIsolated { delegate.summon() }; return noErr
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &hotkeyHandler)
         let shortcutReady = register(model.preferences.shortcutKey, model.preferences.shortcutModifiers)
-        show()
+        summon()
         if !shortcutReady {
             model.error = "The global shortcut is in use. Quit the other Boltbar version or choose another shortcut in Settings."
         }
@@ -65,7 +69,7 @@ final class ChatPanel: NSPanel {
     private func makeMenu() {
         let root = NSMenu()
         let appItem = NSMenuItem(); let appMenu = NSMenu()
-        let newChat = appMenu.addItem(withTitle: "New chat", action: #selector(show), keyEquivalent: "n"); newChat.target = self
+        let newChatItem = appMenu.addItem(withTitle: "New chat", action: #selector(self.newChat), keyEquivalent: "n"); newChatItem.target = self
         let preferences = appMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ","); preferences.target = self
         let update = appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: ""); update.target = updater
         appMenu.addItem(.separator())
@@ -78,7 +82,7 @@ final class ChatPanel: NSPanel {
         status.button?.image = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Boltbar")
         status.button?.toolTip = "Boltbar"
         let menu = NSMenu()
-        let show = menu.addItem(withTitle: "New chat", action: #selector(self.show), keyEquivalent: ""); show.target = self
+        let newChatStatus = menu.addItem(withTitle: "New chat", action: #selector(self.newChat), keyEquivalent: ""); newChatStatus.target = self
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ","); settings.target = self
         let updateStatus = menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: ""); updateStatus.target = updater
         menu.addItem(.separator()); menu.addItem(withTitle: "Quit Boltbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -106,19 +110,28 @@ final class ChatPanel: NSPanel {
         // AppKit uses a bottom-left origin: preserving y grows the editor upward.
         panel.setFrame(frame, display: true)
     }
-    @objc func show() {
+    /// The global shortcut: a new chat, or the current one while it is still working.
+    func summon() { present(newChat: false) }
+    /// ⌘N and the New chat menu items always start over.
+    @objc func newChat() { present(newChat: true) }
+    private func present(newChat: Bool) {
         model.selectingModel = false
         // A global shortcut must not reset the draft behind an open file sheet.
         if let attachmentPicker { attachmentPicker.makeKeyAndOrderFront(nil); return }
         let start = ProcessInfo.processInfo.systemUptime
         settings?.orderOut(nil)
-        model.reset(); fit(NSSize(width: model.panelWidth, height: 112))
+        let kept = model.summon(newChat: newChat)
+        if !kept { fit(NSSize(width: model.panelWidth, height: 112)) }
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
-        if let screen { panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2)) }
+        // A kept chat stays where it was being read, unless the pointer is on another display.
+        if let screen, !kept || panel.screen?.frame != screen.frame {
+            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2))
+            if kept { fit(panel.frame.size) } // Clamp a tall thread to a smaller display.
+        }
         panel.makeKeyAndOrderFront(nil); panel.orderFrontRegardless()
         panel.contentView?.layoutSubtreeIfNeeded()
         focusComposer(); panel.displayIfNeeded()
-        metric(["kind": "show_layout", "ms": (ProcessInfo.processInfo.systemUptime - start) * 1000])
+        metric(["kind": "show_layout", "kept": kept, "ms": (ProcessInfo.processInfo.systemUptime - start) * 1000])
     }
     private func focusComposer() {
         guard attachmentPicker == nil else { return }
@@ -185,7 +198,7 @@ final class ChatPanel: NSPanel {
             }
         }
     }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { summon(); return true }
     func applicationWillTerminate(_ notification: Notification) { model.finish(); catalogTimer?.invalidate(); if let hotkey { UnregisterEventHotKey(hotkey) } }
 }
 

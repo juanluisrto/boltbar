@@ -92,14 +92,20 @@ Implementado el 19 de octubre de 2026. La revisión de la propuesta contra el c�
 
 - **Varios pendientes van juntos en un turno.** El modelo ve todo lo añadido y solo hay una espera. En el hilo cada mensaje sigue apareciendo por separado.
 - **Enter vacío protegido.** Se ignoran la repetición de tecla y cualquier Enter en los 0,6 s posteriores a encolar, para que un doble toque no corte la respuesta.
-- **Regla única para los casos pendientes.** La cola solo avanza sola tras un turno terminado con éxito. Stop, un error del proveedor, cambiar de conversación, ⌥Space o cerrar Boltbar la dejan en pausa, visible y guardada con la conversación. Solo se reanuda con una acción explícita: Enter, Enviar ahora o Reintentar.
+- **Regla única para los casos pendientes.** La cola solo avanza sola tras un turno terminado con éxito. Stop, un error del proveedor, cambiar de conversación (también con ⌘N) o cerrar Boltbar la dejan en pausa, visible y guardada con la conversación. Solo se reanuda con una acción explícita: Enter, Enviar ahora o Reintentar.
 - **Edición en el campo de escritura.** Al pulsar un pendiente, su texto y sus adjuntos pasan al campo de escritura. El mensaje conserva su posición, la cola espera mientras se edita y Esc cancela sin perder nada. Para no pisar un borrador, solo se edita con el campo vacío.
 - **Botón principal.** Mientras el modelo responde, con texto el botón encola y Stop aparece al lado como botón secundario. Antes, pulsarlo para "enviar" detenía la respuesta.
 - **Enviar ahora** está en la cabecera de la cola, no en cada fila, porque los pendientes se envían juntos y en orden.
 - **Respuestas interrumpidas.** Se conservan y se marcan como Interrumpida. Al modelo le llegan con una nota de que se cortaron. Una respuesta detenida antes del primer token ya no se envía vacía, algo que antes provocaba un HTTP 400 en el siguiente mensaje.
 - La interfaz está en inglés, como el resto de Boltbar: `QUEUED`, `Send now ↵`, `↵ interrupt and send`, `INTERRUPTED`.
 
-### Limitación conocida
+### ⌥Space con una conversación en marcha
 
-⌥Space siempre abre una conversación nueva y detiene la respuesta en curso. Si se oculta Boltbar con Esc durante una respuesta con cola y se vuelve con ⌥Space, la cola queda en pausa en el historial en lugar de enviarse. Cambiar ese comportamiento queda fuera de este cambio.
+Antes, ⌥Space siempre abría una conversación nueva: detenía la respuesta en curso y dejaba la cola en pausa en el historial. Ahora ⌥Space recupera la conversación actual, tal como estaba, si sigue trabajando:
+
+- **Cuándo se recupera.** Si hay una respuesta en curso, mensajes en cola (también en pausa, tras Stop o un error) o una respuesta que terminó con la barra oculta y aún no se ha visto. En cualquier otro caso ⌥Space abre una conversación nueva, como antes.
+- **La respuesta terminada fuera de vista también cuenta.** Si solo contara la respuesta en curso, el resultado dependería de si terminó antes o después de pulsar ⌥Space, algo que el usuario no ve: la misma acción unas veces mostraría la respuesta y otras una barra vacía. Se recupera una sola vez; tras verla, el siguiente ⌥Space empieza de cero.
+- **Qué vuelve.** La respuesta sigue llegando, la cola se envía al terminar el turno y se conservan el borrador y la edición de un pendiente. Si estaba abierto el historial, se cierra para mostrar la conversación.
+- **Posición.** La barra reaparece donde estaba, para no perder el punto de lectura. Solo se centra si el puntero está en otra pantalla.
+- **⌘N y New chat siempre empiezan de cero.** Detienen la respuesta, que queda marcada como Interrumpida con su texto parcial, y guardan la cola en pausa con la conversación, igual que al abrir otra desde el historial. Es la forma explícita de descartar una conversación en marcha.
 

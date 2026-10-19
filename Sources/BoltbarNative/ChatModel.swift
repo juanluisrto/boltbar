@@ -58,6 +58,9 @@ import SwiftUI
     var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     static let interruptDelay: TimeInterval = 0.6
     private var lastQueued = -TimeInterval.infinity
+    private var barVisible = true
+    /// A turn ended while the bar was hidden, so its reply hasn't been read.
+    private(set) var unreadReply = false
     private var generation = UUID()
     private var task: Task<Void, Never>?
     private var lastTurn: (messages: [Message], webSearch: Bool)?
@@ -210,12 +213,29 @@ import SwiftUI
         refreshing = false
         if messages.isEmpty && draft.isEmpty && !streaming { applyStartingModel() }
     }
+    /// Whether a summon should bring this chat back instead of replacing it:
+    /// a reply still streaming, messages waiting to go out (held or not), or
+    /// a reply that finished out of sight.
+    var keepsChatOnSummon: Bool { streaming || !queue.isEmpty || unreadReply }
+    /// The global shortcut. An idle chat gives way to a new one; a chat that
+    /// is still working comes back as it was, so its reply keeps streaming and
+    /// its queue still goes out. `newChat` (⌘N) always starts over, stopping
+    /// the reply. Returns whether the current chat was kept.
+    @discardableResult func summon(newChat: Bool = false) -> Bool {
+        defer { barVisible = true; unreadReply = false }
+        guard !newChat, keepsChatOnSummon else { reset(); return false }
+        selectingModel = false; showingModelPicker = false
+        closeHistory()
+        return true
+    }
+    /// The bar left the screen: Esc, Settings.
+    func barHidden() { barVisible = false }
     func reset() {
         applyStartingModel()
         selectingModel = false; showingModelPicker = false
         stop() // Saves any pending messages, held, with the conversation.
         generation = UUID(); task?.cancel(); task = nil
-        draft = ""; attachments = []; messages = []; streaming = false; error = nil
+        draft = ""; attachments = []; messages = []; streaming = false; error = nil; unreadReply = false
         queue = []; queueHeld = false; editingQueuedID = nil; lastQueued = -.infinity
         inputHeight = 26; manualInputHeight = 26; lastTurn = nil
         manualThreadHeight = nil; threadHeight = 44
@@ -402,6 +422,7 @@ import SwiftUI
                     if failed { self.messages[index].interrupted = true }
                 }
                 if failed && !self.queue.isEmpty { self.queueHeld = true }
+                if !self.barVisible { self.unreadReply = true }
                 self.saveConversation()
                 if !self.queuePaused { self.dispatchQueue() }
             }

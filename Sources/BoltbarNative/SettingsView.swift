@@ -90,7 +90,7 @@ struct SettingsView: View {
                 InterfacePicker(label: "Model", selection: $model.defaultModel, options: [ModelChoice?.none] + model.selectableModels.map { Optional($0) }, title: { $0.map { modelTitle($0.model) } ?? "Latest used" })
                 InterfacePicker(label: "Thinking effort", selection: $model.preferences.effort, options: Effort.allCases, title: { $0.title })
                 HStack { Text("Global shortcut"); Spacer(); ShortcutRecorder(model: model).frame(width: 180, height: 28) }
-                Text("Every summon starts a new conversation. Escape hides the bar; ⌘N starts fresh; ⌘, opens Settings.").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("A summon starts a new conversation, or brings back the current one while a reply streams, messages are queued or a reply finished while the bar was hidden. Escape hides the bar; ⌘N always starts fresh; ⌘, opens Settings.").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             ModelSettingsView(model: model)
             VStack(alignment: .leading, spacing: 12) {

@@ -4,7 +4,7 @@ import AppKit
 
 /// Each request streams "partial" (unless silent), then waits until the test
 /// finishes it, so queue behaviour can be checked at every point of a turn.
-private final class ScriptedProvider {
+final class ScriptedProvider {
     var requests: [ChatRequest] = []
     var finished = 0
     var fails = false
