@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2856 1230" width="2856" height="1230">
+  <title>Boltbar logo: six variations</title>
+  <defs><clipPath id="tile"><rect width="1744" height="902" rx="18"/></clipPath></defs>
+  <rect width="2856" height="1230" fill="#DEDDDA"/>
+  <svg x="80" y="80" width="872" height="451" viewBox="0 0 1744 902">
+    <g clip-path="url(#tile)"><rect width="1744" height="902" fill="#222326"/><path fill="#EFE9DE" d="M802.98 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H834.29 L888.63 503 L724.63 503 L703.29 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H769.98 Z"/><path fill="#EFE9DE" d="M941.02 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H909.71 L855.37 399 L1019.37 399 L1040.71 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H974.02 Z"/></g>
+  </svg>
+  <text x="84" y="573" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" fill="#4A4945" letter-spacing="0.4"><tspan font-weight="600" fill="#2A2927">1</tspan><tspan dx="14">Original refined</tspan></text>
+  <svg x="992" y="80" width="872" height="451" viewBox="0 0 1744 902">
+    <g clip-path="url(#tile)"><rect width="1744" height="902" fill="#0A1128"/><path fill="#3A86FF" d="M883 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H789.41 L901.55 471.51 L701.56 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H822.94 Z"/><path fill="#3A86FF" d="M861 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H954.59 L842.45 430.49 L1042.44 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H921.06 Z"/></g>
+  </svg>
+  <text x="996" y="573" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" fill="#4A4945" letter-spacing="0.4"><tspan font-weight="600" fill="#2A2927">2</tspan><tspan dx="14">Sharp</tspan></text>
+  <svg x="1904" y="80" width="872" height="451" viewBox="0 0 1744 902">
+    <g clip-path="url(#tile)"><rect width="1744" height="902" fill="#000000"/><path fill="#FFFFFF" d="M882.19 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H765.94 L900.97 493 L700.97 493 L644.59 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H803.54 Z"/><path fill="#FFFFFF" d="M861.81 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H978.06 L843.03 409 L1043.03 409 L1099.41 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H940.46 Z"/></g>
+  </svg>
+  <text x="1908" y="573" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" fill="#4A4945" letter-spacing="0.4"><tspan font-weight="600" fill="#2A2927">3</tspan><tspan dx="14">Dynamic</tspan></text>
+  <svg x="80" y="635" width="872" height="451" viewBox="0 0 1744 902">
+    <g clip-path="url(#tile)"><rect width="1744" height="902" fill="#F3EAD8"/><path fill="#151413" d="M834.18 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H848.24 L907.67 481 L760.91 481 L734.49 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H801.18 Z"/><path fill="#151413" d="M909.82 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H895.76 L836.33 421 L983.09 421 L1009.51 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H942.82 Z"/></g>
+  </svg>
+  <text x="84" y="1128" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" fill="#4A4945" letter-spacing="0.4"><tspan font-weight="600" fill="#2A2927">4</tspan><tspan dx="14">Minimal</tspan></text>
+  <svg x="992" y="635" width="872" height="451" viewBox="0 0 1744 902">
+    <g clip-path="url(#tile)"><rect width="1744" height="902" fill="#0E2B1D"/><path fill="#C6FF1A" d="M824.57 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H788.46 L862.17 521.71 L677.69 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H775.95 Z"/><path fill="#C6FF1A" d="M919.43 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H955.54 L881.83 380.29 L1066.31 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H968.05 Z"/></g>
+  </svg>
+  <text x="996" y="1128" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" fill="#4A4945" letter-spacing="0.4"><tspan font-weight="600" fill="#2A2927">5</tspan><tspan dx="14">Bold</tspan></text>
+  <svg x="1904" y="635" width="872" height="451" viewBox="0 0 1744 902">
+    <g clip-path="url(#tile)"><rect width="1744" height="902" fill="#1E1E21"/><path fill="#FF6F59" d="M756.78 163.5 H517 A287.5 287.5 0 0 0 517 738.5 H913.32 L954.75 559 L713.09 559 L857.09 415 L698.75 415 L657.09 595.5 H517 A144.5 144.5 0 0 1 517 306.5 H723.78 Z"/><path fill="#FF6F59" d="M987.22 738.5 H1227 A287.5 287.5 0 0 0 1227 163.5 H830.68 L789.25 343 L1030.91 343 L886.91 487 L1045.25 487 L1086.91 306.5 H1227 A144.5 144.5 0 0 1 1227 595.5 H1020.22 Z"/></g>
+  </svg>
+  <text x="1908" y="1128" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" fill="#4A4945" letter-spacing="0.4"><tspan font-weight="600" fill="#2A2927">6</tspan><tspan dx="14">Experimental</tspan></text>
+</svg>

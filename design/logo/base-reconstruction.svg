@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1744 902" width="1744" height="902">
+  <!-- Reconstruction of the reference logo (without the grey annotation strokes).
+       Two disconnected pieces; every cut leans at the same slope (~0.23 x per y). -->
+  <rect width="1744" height="902" fill="#222326"/>
+  <g fill="#EFE9DE">
+    <!-- Left piece: half-stadium ring; short top arm, long bottom arm with an upward tab. -->
+    <path d="M796 115 H442 A287.5 287.5 0 0 0 442 690 H755 L810 455 H716 V403 H700 L667 547 H444 A144.5 144.5 0 0 1 444 258 H763 Z"/>
+    <!-- Right piece: mirrored; long top arm with a downward tab, short bottom arm. -->
+    <path d="M903 115 H1152 A287.5 287.5 0 0 1 1152 690 H862 L895 547 H1152 A144.5 144.5 0 0 0 1152 258 H990 L955 402 H942 V350 H848 Z"/>
+  </g>
+</svg>

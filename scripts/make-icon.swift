@@ -16,17 +16,27 @@ func draw(_ pixels: Int) throws -> Data {
     let panel = NSBezierPath(roundedRect: NSRect(x: 72, y: 72, width: 880, height: 880), xRadius: 198, yRadius: 198)
     NSGradient(starting: color(0x17181b), ending: color(0x353638))!.draw(in: panel, angle: 90)
     NSColor.white.withAlphaComponent(0.12).setStroke(); panel.lineWidth = 2; panel.stroke()
-    let bolt = NSBezierPath()
-    func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x, y: 1024 - y) }
-    // A crisp, recognisable lightning bolt, with gently rounded outer turns.
-    bolt.move(to: point(562, 216)); bolt.line(to: point(304, 548))
-    bolt.curve(to: point(312, 560), controlPoint1: point(296, 558), controlPoint2: point(300, 560))
-    bolt.line(to: point(474, 560)); bolt.line(to: point(430, 798)); bolt.line(to: point(724, 450))
-    bolt.curve(to: point(716, 438), controlPoint1: point(734, 438), controlPoint2: point(728, 438))
-    bolt.line(to: point(550, 438)); bolt.line(to: point(600, 230))
-    bolt.curve(to: point(586, 212), controlPoint1: point(604, 212), controlPoint2: point(602, 212))
-    bolt.line(to: point(574, 212)); bolt.close()
-    NSGradient(starting: color(0xf4ad39), ending: color(0xffdc89))!.draw(in: bolt, angle: 90)
+    // Two pieces of a chain link; the lightning bolt is the gap between them.
+    // Coordinates are the logo's 1744×902 design space, placed as in AppIcon.svg.
+    let s: CGFloat = 0.51362, tx: CGFloat = 64.12, ty: CGFloat = 280.36
+    func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: tx + x * s, y: 1024 - (ty + y * s)) }
+    func arc(_ path: NSBezierPath, _ cx: CGFloat, _ cy: CGFloat, _ r: CGFloat, _ from: CGFloat, _ to: CGFloat, clockwise: Bool) {
+        path.appendArc(withCenter: point(cx, cy), radius: r * s, startAngle: from, endAngle: to, clockwise: clockwise)
+    }
+    let mark = NSBezierPath()
+    mark.move(to: point(882.19, 163.5)); mark.line(to: point(517, 163.5))
+    arc(mark, 517, 451, 287.5, 90, 270, clockwise: false)
+    mark.line(to: point(765.94, 738.5)); mark.line(to: point(900.97, 493)); mark.line(to: point(700.97, 493))
+    mark.line(to: point(644.59, 595.5)); mark.line(to: point(517, 595.5))
+    arc(mark, 517, 451, 144.5, 270, 90, clockwise: true)
+    mark.line(to: point(803.54, 306.5)); mark.close()
+    mark.move(to: point(861.81, 738.5)); mark.line(to: point(1227, 738.5))
+    arc(mark, 1227, 451, 287.5, -90, 90, clockwise: false)
+    mark.line(to: point(978.06, 163.5)); mark.line(to: point(843.03, 409)); mark.line(to: point(1043.03, 409))
+    mark.line(to: point(1099.41, 306.5)); mark.line(to: point(1227, 306.5))
+    arc(mark, 1227, 451, 144.5, 90, -90, clockwise: true)
+    mark.line(to: point(940.46, 595.5)); mark.close()
+    NSGradient(starting: color(0xf4ad39), ending: color(0xffdc89))!.draw(in: mark, angle: 90)
     NSGraphicsContext.restoreGraphicsState()
     return bitmap.representation(using: .png, properties: [:])!
 }
