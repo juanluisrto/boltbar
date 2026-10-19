@@ -64,9 +64,7 @@ struct MarkdownTableView: View {
     @Environment(\.boltbarTheme) private var theme
     let table: MarkdownTable
     @State private var availableWidth: CGFloat = 0
-    private func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
-    }
+    private func inline(_ text: String) -> AttributedString { InlineMarkdown.render(text, accent: theme.accent) }
     private var widths: [CGFloat] {
         let preferred = table.headers.indices.map { column -> CGFloat in
             let values = [table.headers[column]] + table.rows.map { $0[column] }

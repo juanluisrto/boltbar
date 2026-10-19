@@ -91,6 +91,8 @@ struct Message: Identifiable, Codable {
     var pending = false
     var author: String? = nil
     var activity: String? = nil
+    /// Optional so chats saved before this field existed still decode.
+    var interrupted: Bool? = nil
 }
 struct ChatRequest {
     let provider: Provider

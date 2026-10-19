@@ -55,25 +55,97 @@ struct AttachmentStrip: View {
 }
 
 struct MessageRow: View {
+    @Environment(\.boltbarTheme) private var theme
     let message: Message
     @State private var hovering = false
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack {
+            HStack(spacing: 8) {
                 Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
                     .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
+                if message.interrupted == true {
+                    Text("INTERRUPTED").font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.text.opacity(0.25), lineWidth: 1))
+                        .foregroundStyle(.secondary).help("Stopped before it finished; the partial reply stays in the context")
+                }
                 Spacer()
                 if message.role == .assistant, !message.text.isEmpty {
                     CopyIconButton(text: message.text, label: "Copy response", visible: hovering)
                 }
             }.frame(height: 22)
             if !message.attachments.isEmpty { AttachmentStrip(items: message.attachments) }
-            if !message.text.isEmpty { MarkdownText(source: message.text) }
+            if !message.text.isEmpty {
+                MarkdownText(source: message.text)
+                if message.role == .assistant {
+                    let sources = InlineMarkdown.sources(message.text)
+                    if !sources.isEmpty { SourcesLine(sources: sources).padding(.top, 2) }
+                }
+            }
             else if message.pending {
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text(message.activity ?? "Thinking…").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary) }
+            } else if message.interrupted == true {
+                Text("Stopped before the reply began.").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary)
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
             .contentShape(Rectangle()).onHover { hovering = $0 }
+    }
+}
+
+/// Pending messages sit between the thread and the composer, in send order, so
+/// text written during a reply always stays visible with its state.
+struct QueuePanel: View {
+    @Environment(\.boltbarTheme) private var theme
+    @ObservedObject var model: ChatModel
+    private var status: String {
+        if model.editingQueuedID != nil { return "Paused while you edit · Esc cancels" }
+        if model.queueHeld { return "Paused" }
+        return model.queue.count > 1 ? "Sent together when this reply finishes" : "Sends when this reply finishes"
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(model.queue.count > 1 ? "QUEUED · \(model.queue.count)" : "QUEUED")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
+                Text(status).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 8)
+                if model.editingQueuedID == nil {
+                    Button { model.sendQueueNow() } label: {
+                        Text(model.hasDraft ? "Send now" : "Send now ↵").font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(theme.accent)
+                            .padding(.horizontal, 8).frame(height: 22).background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                    }.buttonStyle(.plain)
+                        .help(model.streaming ? "Interrupt this reply and send the queue now" : "Send the queue now")
+                }
+            }.frame(height: 22)
+            ForEach(model.queue) { message in row(message) }
+        }.padding(.horizontal, 10).padding(.vertical, 8)
+            .background(theme.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.border, lineWidth: 1))
+    }
+    private func row(_ message: Message) -> some View {
+        let editing = model.editingQueuedID == message.id
+        let canEdit = model.editingQueuedID == nil && !model.hasDraft
+        let summary = message.text.isEmpty ? message.attachments.map(\.name).joined(separator: ", ")
+            : message.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return HStack(spacing: 8) {
+            // Not .disabled: that would grey out the queue whenever the user types.
+            Button { model.editQueued(message.id) } label: {
+                HStack(spacing: 6) {
+                    if editing { Image(systemName: "pencil").foregroundStyle(theme.accent) }
+                    Text(summary).lineLimit(1).truncationMode(.tail)
+                    if !message.attachments.isEmpty {
+                        Label("\(message.attachments.count)", systemImage: "paperclip").labelStyle(.titleAndIcon).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }.font(.system(size: 12, design: .monospaced)).frame(height: 22).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .opacity(model.editingQueuedID == nil || editing ? 1 : 0.5)
+                .help(editing ? "Editing in the message field" : canEdit ? "Edit" : model.editingQueuedID != nil ? "Finish the current edit first" : "Clear the message field to edit")
+                .accessibilityLabel("Queued message: \(summary)").accessibilityHint(canEdit ? "Edit" : "")
+            Button { model.removeQueued(message.id) } label: {
+                Image(systemName: "xmark").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.secondary).frame(width: 22, height: 22)
+            }.buttonStyle(.plain).help("Remove from queue").accessibilityLabel("Remove queued message")
+        }
     }
 }
 
@@ -143,13 +215,19 @@ struct ChatBar: View {
                 }
                 Rectangle().fill(theme.border).frame(height: 1)
             }
+            if !model.queue.isEmpty { QueuePanel(model: model) }
             if !model.attachments.isEmpty {
                 AttachmentStrip(items: model.attachments) { id in model.attachments.removeAll { $0.id == id } }
             }
             ZStack(alignment: .topLeading) {
-                if model.draft.isEmpty { Text("Ask anything…").font(.system(size: 15, design: .monospaced)).foregroundStyle(.gray).padding(.top, 2).allowsHitTesting(false) }
+                if model.draft.isEmpty { Text(placeholder).font(.system(size: 15, design: .monospaced)).foregroundStyle(.gray).padding(.top, 2).allowsHitTesting(false) }
                 GrowingEditor(model: model).onAppear { DispatchQueue.main.async { model.focusComposer?() } }
             }.frame(height: model.inputHeight)
+                .overlay(alignment: .topTrailing) {
+                    if let hint = returnHint {
+                        Text(hint).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).padding(.top, 4).allowsHitTesting(false)
+                    }
+                }
             if let error = model.error {
                 HStack(alignment: .top, spacing: 8) {
                     Text(error).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.error).fixedSize(horizontal: false, vertical: true).padding(8).background(theme.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
@@ -185,10 +263,20 @@ struct ChatBar: View {
                     .accessibilityValue(model.webSearchActive ? "On" : "Off")
                     .help(model.canSearchWeb ? (model.webSearch ? "Web access on · searches when needed" : "Allow web search · remembers your choice") : "Web search with Codex requires an OpenAI API key")
                 PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
-                Button { if model.streaming { model.stop() } else { model.send() } } label: {
-                    Image(systemName: model.streaming ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold, design: .monospaced))
+                // With text during a reply the main button queues it, so Stop
+                // stays available beside it instead of hiding behind it.
+                let stops = model.streaming && !model.hasDraft
+                if model.streaming && model.hasDraft {
+                    Button { model.stop() } label: {
+                        Image(systemName: "stop.fill").font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .frame(width: 31, height: 31).background(theme.surface, in: Circle())
+                    }.buttonStyle(.plain).accessibilityLabel("Stop").help("Stop this reply")
+                }
+                Button { if stops { model.stop() } else { model.send() } } label: {
+                    Image(systemName: stops ? "stop.fill" : "arrow.up").font(.system(size: 15, weight: .semibold, design: .monospaced))
                         .frame(width: 31, height: 31).background(accent, in: Circle()).foregroundStyle(theme.onAccent)
-                }.buttonStyle(.plain).accessibilityLabel(model.streaming ? "Stop" : "Send")
+                }.buttonStyle(.plain).accessibilityLabel(stops ? "Stop" : model.streaming ? "Add to queue" : "Send")
+                    .help(stops ? "Stop this reply" : model.streaming ? "Queue · sends when this reply finishes" : "Send")
             }
             }
             if let error = model.historyError {
@@ -202,6 +290,19 @@ struct ChatBar: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { Color.clear.preference(key: SizeKey.self, value: $0.size) })
         .onPreferenceChange(SizeKey.self) { model.resize?($0) }
+    }
+}
+
+extension ChatBar {
+    private var placeholder: String {
+        if model.editingQueuedID != nil { return "Edit queued message…" }
+        return model.streaming || !model.queue.isEmpty ? "Queue a follow-up…" : "Ask anything…"
+    }
+    /// Return's meaning changes with an empty composer and a queue; say so
+    /// where the user is looking instead of relying on the shortcut alone.
+    private var returnHint: String? {
+        guard model.draft.isEmpty, !model.queue.isEmpty, model.editingQueuedID == nil else { return nil }
+        return model.streaming ? "↵ interrupt and send" : "↵ send queued"
     }
 }
 
@@ -336,11 +437,91 @@ struct MarkdownText: View {
     }
 }
 
-private struct MarkdownLine: View {
-    let line: String
-    func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+/// Inline Markdown with links that read as links in every theme. Numeric web
+/// citations become compact tinted chips, kept apart from neighbouring words
+/// even in chats saved before streaming separated them. Descriptive links keep
+/// their words and gain an underline, so neither depends on colour alone.
+enum InlineMarkdown {
+    struct Source: Equatable { let number: Int; let url: URL; let domain: String }
+    static func isCitation(_ label: String, _ url: URL?) -> Bool {
+        guard let scheme = url?.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return false }
+        return (1...3).contains(label.count) && label.allSatisfy { $0.isASCII && $0.isNumber }
     }
+    static func chip(_ label: String, accent: Color, attributes: AttributeContainer = AttributeContainer()) -> AttributedString {
+        var chip = AttributedString("\u{2009}\(label)\u{2009}", attributes: attributes)
+        chip.swiftUI.font = .system(size: 11, weight: .semibold).monospacedDigit()
+        chip.swiftUI.backgroundColor = accent.opacity(0.16)
+        chip.swiftUI.baselineOffset = 1
+        return chip
+    }
+    static func render(_ source: String, accent: Color) -> AttributedString {
+        let parsed = (try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(source)
+        var result = AttributedString(), afterCitation = false
+        for run in parsed.runs {
+            var piece = AttributedString(parsed[run.range])
+            let text = String(piece.characters)
+            if isCitation(text, run.link) {
+                // Consecutive chips need a real gap, or their tints merge into one.
+                if afterCitation || result.characters.last.map({ !$0.isWhitespace }) == true { result += AttributedString(" ") }
+                result += chip(text, accent: accent, attributes: run.attributes); afterCitation = true
+                continue
+            }
+            if afterCitation, let first = text.first, CitationSpacing.separates(first) { result += AttributedString(" ") }
+            if run.link != nil { piece.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid, color: accent.opacity(0.55)) }
+            result += piece; afterCitation = false
+        }
+        return result
+    }
+    /// Numbered sources in citation order, for the line under an answer.
+    static func sources(_ text: String) -> [Source] {
+        let pattern = #"\[([0-9]{1,3})\]\((?:<([^>\s]+)>|([^)\s]+))\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        var found: [Int: Source] = [:]
+        let string = text as NSString
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: string.length)) {
+            let raw = match.range(at: 2).location != NSNotFound ? string.substring(with: match.range(at: 2)) : string.substring(with: match.range(at: 3))
+            guard let number = Int(string.substring(with: match.range(at: 1))), found[number] == nil,
+                  let url = URL(string: raw), isCitation(String(number), url), let host = url.host?.lowercased() else { continue }
+            found[number] = Source(number: number, url: url, domain: host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
+        }
+        return found.keys.sorted().compactMap { found[$0] }
+    }
+}
+
+/// Visible source domains replace hover tooltips, which SwiftUI text cannot
+/// attach to a single link; hovering the line still lists every full address.
+struct SourcesLine: View {
+    @Environment(\.boltbarTheme) private var theme
+    let sources: [InlineMarkdown.Source]
+    var body: some View {
+        var line = AttributedString("SOURCES")
+        line.swiftUI.font = .system(size: 9, weight: .semibold, design: .monospaced)
+        line.swiftUI.foregroundColor = theme.text.opacity(0.55); line.swiftUI.tracking = 1
+        // Sources on one site share its domain label: "1 2 swift.org".
+        var domains: [String] = []
+        for source in sources where !domains.contains(source.domain) { domains.append(source.domain) }
+        for domain in domains {
+            let group = sources.filter { $0.domain == domain }
+            line += AttributedString("   ")
+            for source in group {
+                var link = AttributeContainer(); link.link = source.url
+                line += InlineMarkdown.chip(String(source.number), accent: theme.accent, attributes: link) + AttributedString(" ")
+            }
+            var label = AttributeContainer(); label.link = group[0].url
+            var name = AttributedString(domain, attributes: label)
+            name.swiftUI.font = .system(size: 11, design: .monospaced)
+            line += name
+        }
+        return Text(line).lineSpacing(5).tint(theme.accent).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(sources.map { "\($0.number)  \($0.url.absoluteString)" }.joined(separator: "\n"))
+    }
+}
+
+private struct MarkdownLine: View {
+    @Environment(\.boltbarTheme) private var theme
+    let line: String
+    func inline(_ text: String) -> AttributedString { InlineMarkdown.render(text, accent: theme.accent) }
     var body: some View {
         Group {
             if line.isEmpty { Color.clear.frame(height: 5) }

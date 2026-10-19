@@ -6,6 +6,14 @@ enum StreamUpdate {
     case activity(String)
 }
 
+/// A citation never touches the next word, while closing punctuation and
+/// emphasis markers stay attached to the text they belong to.
+enum CitationSpacing {
+    static func separates(_ next: Character) -> Bool {
+        !next.isWhitespace && !".,;:!?)]}»”’…*_~`".contains(next)
+    }
+}
+
 /// Convert provider citation annotations into portable, clickable Markdown.
 /// Offsets are Unicode scalar positions, not Swift's grapheme-cluster count.
 enum WebCitations {
@@ -41,8 +49,9 @@ enum WebCitations {
             guard end <= boundary else {
                 fallback.append(contentsOf: edit.labels.filter { !fallback.contains($0) }); continue
             }
-            let prefix = edit.start == end && end > 0 && scalars[end - 1] != " " ? " " : ""
-            result.replaceSubrange(edit.start..<end, with: (prefix + edit.labels.joined(separator: " ")).unicodeScalars)
+            let prefix = edit.start > 0 && !Character(scalars[edit.start - 1]).isWhitespace ? " " : ""
+            let suffix = end < scalars.count && CitationSpacing.separates(Character(scalars[end])) ? " " : ""
+            result.replaceSubrange(edit.start..<end, with: (prefix + edit.labels.joined(separator: " ") + suffix).unicodeScalars)
             boundary = edit.start
         }
         var rendered = String(String.UnicodeScalarView(result))
@@ -100,10 +109,19 @@ struct OpenAITextStream {
 }
 
 /// Claude emits web citations alongside text deltas, without text offsets.
+/// Hold each block's citations until the block ends, so they follow the cited
+/// claim whatever the event order, and keep trailing whitespace back so a
+/// citation lands before a line break instead of at the start of the next line.
 struct AnthropicTextStream {
     private var urls: [String] = []
+    private var cited: [String] = []
+    private var held = ""
+    private var emitted = false
+    private var afterCitation = false
     mutating func consume(_ event: [String: Any]) throws -> [StreamUpdate] {
-        if event["type"] as? String == "content_block_start", let block = event["content_block"] as? [String: Any] {
+        switch event["type"] as? String {
+        case "content_block_start":
+            guard let block = event["content_block"] as? [String: Any] else { return [] }
             if block["type"] as? String == "server_tool_use", block["name"] as? String == "web_search" {
                 return [.activity("Searching the web…")]
             }
@@ -113,16 +131,35 @@ struct AnthropicTextStream {
                 }
                 return [.activity("Writing answer…")]
             }
+            return []
+        case "content_block_delta":
+            guard let delta = event["delta"] as? [String: Any] else { return [] }
+            if let text = delta["text"] as? String { return self.text(text) }
+            if delta["type"] as? String == "citations_delta", let citation = delta["citation"] as? [String: Any],
+               citation["type"] as? String == "web_search_result_location", let raw = citation["url"] as? String,
+               let url = URL(string: raw), ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
+                let address = url.absoluteString.replacingOccurrences(of: ">", with: "%3E").replacingOccurrences(of: "<", with: "%3C")
+                if !urls.contains(address) { urls.append(address) }
+                let label = "[\(urls.firstIndex(of: address)! + 1)](<\(address)>)"
+                if !cited.contains(label) { cited.append(label) }
+            }
+            return []
+        case "content_block_stop":
+            guard !cited.isEmpty else { return [] }
+            defer { cited = []; held = "" }
+            let prefix = emitted ? " " : ""
+            afterCitation = held.isEmpty; emitted = true
+            return [.text(prefix + cited.joined(separator: " ") + held)]
+        default: return []
         }
-        guard event["type"] as? String == "content_block_delta", let delta = event["delta"] as? [String: Any] else { return [] }
-        if let text = delta["text"] as? String { return [.text(text)] }
-        if delta["type"] as? String == "citations_delta", let citation = delta["citation"] as? [String: Any],
-           citation["type"] as? String == "web_search_result_location", let raw = citation["url"] as? String,
-           let url = URL(string: raw), ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
-            let address = url.absoluteString.replacingOccurrences(of: ">", with: "%3E").replacingOccurrences(of: "<", with: "%3C")
-            if !urls.contains(address) { urls.append(address) }
-            return [.text(" [\(urls.firstIndex(of: address)! + 1)](<\(address)>)")]
-        }
-        return []
+    }
+    private mutating func text(_ delta: String) -> [StreamUpdate] {
+        let value = held + delta
+        guard let last = value.lastIndex(where: { !$0.isWhitespace }) else { held = value; return [] }
+        held = String(value[value.index(after: last)...])
+        var visible = String(value[...last])
+        if afterCitation, let first = visible.first, CitationSpacing.separates(first) { visible = " " + visible }
+        afterCitation = false; emitted = true
+        return [.text(visible)]
     }
 }

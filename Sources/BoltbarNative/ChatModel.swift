@@ -22,6 +22,13 @@ import SwiftUI
     @Published var showingModelPicker = false
     @Published var attachments: [Attachment] = []
     @Published var messages: [Message] = [] { didSet { conversationDirty = true } }
+    /// Messages written while a reply streams. They go out together as the
+    /// next turn, and only on their own after a turn that finished normally.
+    @Published private(set) var queue: [Message] = [] { didSet { conversationDirty = true } }
+    /// Stop, a provider error or reopening a chat holds the queue until an
+    /// explicit send, so pending messages never go out unexpectedly.
+    @Published private(set) var queueHeld = false
+    @Published private(set) var editingQueuedID: UUID?
     @Published var history: [ConversationSummary] = []
     @Published var historyError: String?
     @Published var openingConversation = false
@@ -48,9 +55,12 @@ import SwiftUI
     var focusComposer: (() -> Void)?
     var resizeOrigin: NSPoint?
     var updateShortcut: ((UInt32, UInt32, String) -> Bool)?
+    var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    static let interruptDelay: TimeInterval = 0.6
+    private var lastQueued = -TimeInterval.infinity
     private var generation = UUID()
     private var task: Task<Void, Never>?
-    private var lastRequest: ChatRequest?
+    private var lastTurn: (messages: [Message], webSearch: Bool)?
     private let defaults: UserDefaults
     private let streamer: Streamer
     private var historyStore: ConversationStore?
@@ -117,6 +127,8 @@ import SwiftUI
         if let defaultModel, selectableModels.contains(defaultModel) { selectModel(defaultModel) }
         else if !selectedModelReady, let first = selectableModels.first { selectModel(first) }
     }
+    var queuePaused: Bool { queueHeld || editingQueuedID != nil }
+    var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty }
     var canSearchWeb: Bool { provider == .anthropic || preferences.transport(provider) != .cli }
     var webSearchActive: Bool { webSearch && canSearchWeb }
     var filteredHistory: [ConversationSummary] {
@@ -201,10 +213,11 @@ import SwiftUI
     func reset() {
         applyStartingModel()
         selectingModel = false; showingModelPicker = false
-        stop()
+        stop() // Saves any pending messages, held, with the conversation.
         generation = UUID(); task?.cancel(); task = nil
         draft = ""; attachments = []; messages = []; streaming = false; error = nil
-        inputHeight = 26; manualInputHeight = 26; lastRequest = nil
+        queue = []; queueHeld = false; editingQueuedID = nil; lastQueued = -.infinity
+        inputHeight = 26; manualInputHeight = 26; lastTurn = nil
         manualThreadHeight = nil; threadHeight = 44
         resizeOrigin = nil
         closeHistory(); historyQuery = ""; selectedHistoryID = nil; canReturnToHistory = false; manualHistoryHeight = nil
@@ -212,7 +225,10 @@ import SwiftUI
     }
     func stop() {
         generation = UUID(); task?.cancel(); task = nil; streaming = false
-        for index in messages.indices where messages[index].pending { messages[index].pending = false }
+        for index in messages.indices where messages[index].pending {
+            messages[index].pending = false; messages[index].interrupted = true
+        }
+        if !queue.isEmpty { queueHeld = true }
         saveConversation()
     }
     func saveConversation() {
@@ -220,7 +236,8 @@ import SwiftUI
         let summary = ConversationSummary(id: conversationID, title: Conversation.title(for: messages), createdAt: conversationCreated, updatedAt: Date())
         var savedMessages = messages
         for index in savedMessages.indices { savedMessages[index].pending = false }
-        let record = Conversation(summary: summary, messages: savedMessages, provider: provider, model: model, effort: preferences.effort, transport: preferences.transport(provider))
+        let record = Conversation(summary: summary, messages: savedMessages, provider: provider, model: model, effort: preferences.effort,
+            transport: preferences.transport(provider), queued: queue.isEmpty ? nil : queue)
         history.removeAll { $0.id == summary.id }; history.insert(summary, at: 0)
         conversationDirty = false
         historyStore.save(record) { [weak self] error in
@@ -243,8 +260,9 @@ import SwiftUI
                 selectedHistoryID = remaining.isEmpty ? nil : remaining[min(row, remaining.count - 1)].id
             }
             if conversationID == id {
-                messages = []; conversationID = UUID(); conversationCreated = Date()
-                conversationDirty = false; lastRequest = nil; canReturnToHistory = false
+                messages = []; queue = []; queueHeld = false; editingQueuedID = nil
+                conversationID = UUID(); conversationCreated = Date()
+                conversationDirty = false; lastTurn = nil; canReturnToHistory = false
                 error = nil; threadHeight = 44; manualThreadHeight = nil
             }
             historyError = nil
@@ -261,7 +279,8 @@ import SwiftUI
             preferences.provider = record.provider; preferences.effort = record.effort
             preferences.models[record.provider.rawValue] = record.model
             preferences.transports[record.provider.rawValue] = record.transport
-            draft = ""; attachments = []; error = nil; lastRequest = nil
+            queue = record.queued ?? []; queueHeld = !queue.isEmpty; editingQueuedID = nil
+            draft = ""; attachments = []; error = nil; lastTurn = nil
             inputHeight = 26; manualInputHeight = 26; manualThreadHeight = nil; threadHeight = 44
             conversationDirty = false
             selectedHistoryID = id; canReturnToHistory = true
@@ -270,33 +289,93 @@ import SwiftUI
         } catch { historyError = "Could not open this conversation: \(error.localizedDescription)"; return false }
     }
     func finish() { stop(); historyStore?.flush() }
+    /// Return and the send button. While a reply streams, text joins the queue.
+    /// With an empty composer, Return sends pending messages now, interrupting
+    /// the reply, except just after queueing so a quick double press can't.
     func send() {
-        guard !streaming else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !attachments.isEmpty else { return }
+        guard !text.isEmpty || !attachments.isEmpty else {
+            if streaming && clock() - lastQueued < Self.interruptDelay { return }
+            sendQueueNow(); return
+        }
         // The sent message owns its attachments. Clearing the composer cannot
         // remove the thumbnail or the image from later conversation requests.
-        messages.append(Message(role: .user, text: text, attachments: attachments))
+        var message = Message(role: .user, text: text, attachments: attachments)
         draft = ""; attachments = []; inputHeight = 26; manualInputHeight = 26
-        begin(ChatRequest(provider: provider, model: model, effort: preferences.effort,
-            transport: preferences.transport(provider), messages: messages, webSearch: webSearch && canSearchWeb))
+        if let id = editingQueuedID, let index = queue.firstIndex(where: { $0.id == id }) {
+            message.id = id; queue[index] = message
+        } else if streaming || !queue.isEmpty {
+            queue.append(message)
+        } else {
+            editingQueuedID = nil; messages.append(message)
+            begin(webSearch: webSearch && canSearchWeb); return
+        }
+        // Any explicit send resumes a held queue, keeping its order.
+        editingQueuedID = nil; queueHeld = false; lastQueued = clock()
+        if streaming { saveConversation() } else { dispatchQueue() }
+    }
+    /// Interrupt the reply, keeping its partial text, and send every pending
+    /// message as one turn. Safe to race with the reply finishing: whichever
+    /// runs first empties the queue, and a stopped reply can't dispatch it.
+    func sendQueueNow() {
+        guard !queue.isEmpty, editingQueuedID == nil else { return }
+        if streaming { stop() }
+        dispatchQueue()
+    }
+    /// Editing reuses the composer, so attachments can change too. The message
+    /// keeps its place, and the queue waits until the edit is sent or cancelled.
+    func editQueued(_ id: UUID) {
+        guard editingQueuedID == nil, !hasDraft, let message = queue.first(where: { $0.id == id }) else { return }
+        editingQueuedID = id; draft = message.text; attachments = message.attachments
+        focusComposer?()
+    }
+    @discardableResult func cancelQueuedEdit() -> Bool {
+        guard editingQueuedID != nil else { return false }
+        editingQueuedID = nil; draft = ""; attachments = []; inputHeight = 26; manualInputHeight = 26
+        // The reply may have finished during the edit; cancelling isn't a send.
+        if !streaming && !queue.isEmpty { queueHeld = true }
+        return true
+    }
+    func removeQueued(_ id: UUID) {
+        if editingQueuedID == id { cancelQueuedEdit() }
+        queue.removeAll { $0.id == id }
+        if queue.isEmpty { queueHeld = false }
+        saveConversation()
+    }
+    private func dispatchQueue() {
+        guard !streaming, !queue.isEmpty, editingQueuedID == nil else { return }
+        queueHeld = false
+        messages.append(contentsOf: queue); queue = []
+        begin(webSearch: webSearch && canSearchWeb)
     }
     func retry() {
-        guard !streaming, let previous = lastRequest else { return }
-        messages = previous.messages
-        begin(ChatRequest(provider: provider, model: model, effort: preferences.effort,
-            transport: preferences.transport(provider), messages: messages, webSearch: previous.webSearch && canSearchWeb))
+        guard !streaming, let previous = lastTurn else { return }
+        messages = previous.messages; queueHeld = false
+        begin(webSearch: previous.webSearch && canSearchWeb)
     }
-    private func begin(_ request: ChatRequest) {
+    /// Providers reject empty turns: a reply stopped before its first word is
+    /// left out, and a partial one tells the model it was cut short.
+    private func request(webSearch: Bool) -> ChatRequest {
+        let context = messages.compactMap { message -> Message? in
+            guard message.role == .assistant else { return message }
+            if message.text.isEmpty && message.attachments.isEmpty { return nil }
+            guard message.interrupted == true else { return message }
+            var partial = message; partial.text += "\n\n[Interrupted by the user]"; return partial
+        }
+        return ChatRequest(provider: provider, model: model, effort: preferences.effort,
+            transport: preferences.transport(provider), messages: context, webSearch: webSearch)
+    }
+    private func begin(webSearch: Bool) {
+        let request = request(webSearch: webSearch)
         error = nil; streaming = true; generation = UUID(); let current = generation
-        lastRequest = request
+        lastTurn = (messages, webSearch)
         let assistant = Message(role: .assistant, text: "", pending: true, author: request.provider.title)
         messages.append(assistant)
         saveConversation()
         let streamer = self.streamer
         task = Task { [weak self] in
             let start = ProcessInfo.processInfo.systemUptime
-            var first: Double?; var count = 0
+            var first: Double?; var count = 0, failed = false
             do {
                 try await streamer(request) { [weak self] update in
                     guard let self, self.generation == current,
@@ -312,12 +391,19 @@ import SwiftUI
                 metric(["kind": "stream", "provider": request.provider.rawValue, "model": request.model,
                     "ttft_ms": first ?? -1, "total_ms": (ProcessInfo.processInfo.systemUptime - start) * 1000, "deltas": count])
             } catch {
+                failed = true
                 if let self, self.generation == current, !Task.isCancelled { self.error = error.localizedDescription }
             }
             if let self, self.generation == current {
                 self.streaming = false
-                if let index = self.messages.firstIndex(where: { $0.id == assistant.id }) { self.messages[index].pending = false }
+                if let index = self.messages.firstIndex(where: { $0.id == assistant.id }) {
+                    // A reply cut short by an error must not read as complete in later turns.
+                    self.messages[index].pending = false
+                    if failed { self.messages[index].interrupted = true }
+                }
+                if failed && !self.queue.isEmpty { self.queueHeld = true }
                 self.saveConversation()
+                if !self.queuePaused { self.dispatchQueue() }
             }
         }
     }

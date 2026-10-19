@@ -30,6 +30,7 @@ final class ComposerTextView: NSTextView {
     var onCycleModel: ((Int) -> Void)?
     var onStepEffort: ((Int) -> Bool)?
     var onEndModelSelection: (() -> Bool)?
+    var onCancelEdit: (() -> Bool)?
     override func mouseDown(with event: NSEvent) {
         _ = onEndModelSelection?(); super.mouseDown(with: event)
     }
@@ -46,7 +47,10 @@ final class ComposerTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         if hasMarkedText() { super.keyDown(with: event); return }
         if event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty, onPickerKey?(event.keyCode) == true { return }
-        if event.keyCode == 53 { if onEndModelSelection?() != true { window?.orderOut(nil) }; return }
+        if event.keyCode == 53 {
+            if onEndModelSelection?() != true && onCancelEdit?() != true { window?.orderOut(nil) }
+            return
+        }
         if string.isEmpty, !hasMarkedText(),
            event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
             if event.keyCode == 125 || event.keyCode == 126 { onCycleModel?(event.keyCode == 125 ? 1 : -1); return }
@@ -68,7 +72,12 @@ final class ComposerTextView: NSTextView {
             default: break
             }
         }
-        if event.keyCode == 36 && !event.modifierFlags.contains(.shift) && !hasMarkedText() { onSend?(); return }
+        // A held Return must not queue a message and then, once the field is
+        // empty, interrupt the reply with its repeats.
+        if event.keyCode == 36 && !event.modifierFlags.contains(.shift) && !hasMarkedText() {
+            if !event.isARepeat { onSend?() }
+            return
+        }
         if event.characters?.contains(where: { !$0.isNewline && !$0.isWhitespace }) == true || event.keyCode == 49 { _ = onEndModelSelection?() }
         super.keyDown(with: event)
     }
@@ -120,6 +129,7 @@ struct GrowingEditor: NSViewRepresentable {
             model.stepEffort(direction); return true
         }
         text.onEndModelSelection = { model.endModelSelection() }
+        text.onCancelEdit = { model.cancelQueuedEdit() }
         text.onSend = { model.send() }; text.onAttachment = { model.receive($0) }
         text.onNewChat = { model.newConversation?() }; text.onSettings = { model.openSettings?() }
         text.onHistory = { model.showHistory(preservingSearch: model.canReturnToHistory) }

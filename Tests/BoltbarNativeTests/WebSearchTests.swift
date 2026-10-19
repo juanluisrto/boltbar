@@ -19,9 +19,56 @@ final class WebSearchTests: XCTestCase {
         var stream = AnthropicTextStream()
         let start = try stream.consume(["type": "content_block_start", "content_block": ["type": "server_tool_use", "name": "web_search"]])
         guard case .activity("Searching the web…") = start.first else { return XCTFail("Missing activity") }
-        let result = try stream.consume(["type": "content_block_delta", "delta": ["type": "citations_delta", "citation": ["type": "web_search_result_location", "url": "https://swift.org/download/"]]])
+        _ = try stream.consume(["type": "content_block_delta", "delta": ["type": "text_delta", "text": "Swift"]])
+        XCTAssertTrue(try stream.consume(["type": "content_block_delta", "delta": ["type": "citations_delta", "citation": ["type": "web_search_result_location", "url": "https://swift.org/download/"]]]).isEmpty)
+        let result = try stream.consume(["type": "content_block_stop"])
         guard case .text(" [1](<https://swift.org/download/>)") = result.first else { return XCTFail("Missing citation") }
         XCTAssertThrowsError(try stream.consume(["type": "content_block_start", "content_block": ["type": "web_search_tool_result", "content": ["type": "web_search_tool_result_error", "error_code": "unavailable"]]]))
+    }
+    func testClaudeCitationsFollowTheirClaimWithoutTouchingTheNextWord() throws {
+        func render(_ blocks: [(text: String, urls: [String])], citationsFirst: Bool = false) throws -> String {
+            var stream = AnthropicTextStream(), output = ""
+            func feed(_ event: [String: Any]) throws { for case .text(let value) in try stream.consume(event) { output += value } }
+            for block in blocks {
+                let citations = block.urls.map { ["type": "content_block_delta", "delta": ["type": "citations_delta",
+                    "citation": ["type": "web_search_result_location", "url": $0]]] as [String: Any] }
+                try feed(["type": "content_block_start", "content_block": ["type": "text", "text": ""]])
+                if citationsFirst { try citations.forEach(feed) }
+                for piece in block.text.split(separator: "|", omittingEmptySubsequences: false) {
+                    try feed(["type": "content_block_delta", "delta": ["type": "text_delta", "text": String(piece)]])
+                }
+                if !citationsFirst { try citations.forEach(feed) }
+                try feed(["type": "content_block_stop"])
+            }
+            return output
+        }
+        let a = "https://a.example/", b = "https://b.example/"
+        XCTAssertEqual(try render([("Released in March", [a]), ("If you need", [])]),
+                       "Released in March [1](<\(a)>) If you need")
+        XCTAssertEqual(try render([("Released in March", [a]), (". Max", [])], citationsFirst: true),
+                       "Released in March [1](<\(a)>). Max")
+        XCTAssertEqual(try render([("- First |item\n", [a, b, a]), ("- Second", [b])]),
+                       "- First item [1](<\(a)>) [2](<\(b)>)\n- Second [2](<\(b)>)")
+        XCTAssertEqual(try render([("Plain text", [])]), "Plain text")
+    }
+    func testOpenAICitationMarkersAreSeparatedFromTheFollowingWord() {
+        let marker = "\u{E200}cite\u{E202}turn0search0\u{E201}", text = "Done.\(marker)If you"
+        let start = "Done.".unicodeScalars.count, end = start + marker.unicodeScalars.count
+        let citation: [String: Any] = ["type": "url_citation", "start_index": start, "end_index": end, "url": "https://swift.org/"]
+        XCTAssertEqual(WebCitations.markdown(text, annotations: [citation]), "Done. [1](<https://swift.org/>) If you")
+        var claim = citation; claim["start_index"] = 0; claim["end_index"] = 4
+        XCTAssertEqual(WebCitations.markdown("Done. Next", annotations: [claim]), "Done [1](<https://swift.org/>). Next")
+    }
+    func testRenderedCitationsStaySeparatedEvenInOldSavedText() {
+        func plain(_ source: String) -> String { String(InlineMarkdown.render(source, accent: .blue).characters) }
+        let a = "https://a.example/x", b = "https://b.example/"
+        XCTAssertEqual(plain("March[1](<\(a)>)If you"), "March \u{2009}1\u{2009} If you")
+        XCTAssertEqual(plain("March [1](<\(a)>)[2](<\(b)>)."), "March \u{2009}1\u{2009} \u{2009}2\u{2009}.")
+        XCTAssertEqual(plain("Read [the guide](\(b)) now"), "Read the guide now", "Descriptive links keep their words")
+        XCTAssertEqual(plain("In [2024](\(b)) and [1](file:///etc/passwd)"), "In 2024 and 1", "Only short web numbers are citations")
+        let sources = InlineMarkdown.sources("A [2](<\(b)>) B [1](<https://www.a.example/x>) [1](<\(b)>) [3](file:///etc/passwd)")
+        XCTAssertEqual(sources.map(\.number), [1, 2])
+        XCTAssertEqual(sources.map(\.domain), ["a.example", "b.example"])
     }
     func testSearchIsOptInAndLetsTheModelDecideWhetherToUseIt() {
         var request = ChatRequest(provider: .openai, model: "gpt-6.1-sol", effort: .low, transport: .api,

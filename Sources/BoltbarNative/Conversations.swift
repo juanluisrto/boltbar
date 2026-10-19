@@ -14,6 +14,8 @@ struct Conversation: Codable {
     let model: String
     let effort: Effort
     let transport: Transport
+    /// Messages still waiting to be sent; reopened chats show them paused.
+    var queued: [Message]? = nil
 
     static func title(for messages: [Message]) -> String {
         guard let first = messages.first(where: { $0.role == .user }) else { return "New conversation" }
