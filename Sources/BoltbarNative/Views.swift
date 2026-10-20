@@ -188,6 +188,7 @@ struct ChatBar: View {
     private var accent: Color { theme.accent }
     @ObservedObject var model: ChatModel
     @State private var followsStream = true
+    @State private var legacyScroller = NSScroller.preferredScrollerStyle == .legacy
     var body: some View {
         VStack(spacing: 10) {
             PanelMoveArea().frame(height: 12)
@@ -201,6 +202,9 @@ struct ChatBar: View {
                             ForEach(model.messages) { MessageRow(message: $0) }
                             Color.clear.frame(height: 1).id("bottom")
                         }.frame(maxWidth: .infinity, alignment: .leading)
+                            // A legacy scroller (shown with a mouse attached) takes room
+                            // inside the view; keep copy buttons and text clear of it.
+                            .padding(.trailing, legacyScroller ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) + 4 : 0)
                             .background(GeometryReader { Color.clear.preference(key: ThreadHeightKey.self, value: $0.size.height) })
                             .background(ChatScrollObserver { followsStream = $0 })
                     }.frame(height: model.manualThreadHeight ?? min(330, max(44, model.threadHeight)))
@@ -290,6 +294,9 @@ struct ChatBar: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { Color.clear.preference(key: SizeKey.self, value: $0.size) })
         .onPreferenceChange(SizeKey.self) { model.resize?($0) }
+        .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
+            legacyScroller = NSScroller.preferredScrollerStyle == .legacy
+        }
     }
 }
 
