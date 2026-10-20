@@ -328,6 +328,28 @@ p {
   color: #c9c7c2;
 }
 
+.lights {
+  margin-bottom: 18px;
+}
+.lights dt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+}
+.light {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.light.look { background: #8e8e93; }
+.light.ask { background: #a0ccb8; }
+.light.edit { background: #e5bb88; }
+.light.full { background: #e79891; }
+.also code {
+  color: var(--text);
+}
+
 .bottom {
   margin-top: 72px;
   padding: 24px 0 56px;

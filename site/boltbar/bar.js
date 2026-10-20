@@ -3,10 +3,10 @@
 // and the layout are copied from the app (Appearance.swift, Views.swift).
 
 export const THEMES = {
-  paper: { name: "paper", label: "Paper", background: "#F6F3EC", text: "#292824", accent: "#39735C", dark: false },
-  mist: { name: "mist", label: "Mist", background: "#F1F5F9", text: "#243247", accent: "#4268B3", dark: false },
-  graphite: { name: "graphite", label: "Graphite", background: "#1C1C1E", text: "#E8E7E4", accent: "#A0CCB8", dark: true },
-  midnight: { name: "midnight", label: "Midnight", background: "#151D2B", text: "#E0E7F0", accent: "#A7B6F5", dark: true },
+  paper: { name: "paper", label: "Paper", background: "#F6F3EC", text: "#292824", accent: "#39735C", error: "#A94442", dark: false },
+  mist: { name: "mist", label: "Mist", background: "#F1F5F9", text: "#243247", accent: "#4268B3", error: "#AD435E", dark: false },
+  graphite: { name: "graphite", label: "Graphite", background: "#1C1C1E", text: "#E8E7E4", accent: "#A0CCB8", error: "#E79891", dark: true },
+  midnight: { name: "midnight", label: "Midnight", background: "#151D2B", text: "#E0E7F0", accent: "#A7B6F5", error: "#E6A0B2", dark: true },
 };
 export const THEME_ORDER = ["paper", "mist", "graphite", "midnight"];
 /** The bolt's amber, as a custom accent (the app lets you pick any). */
@@ -23,6 +23,16 @@ export const MODELS = [
   { id: "gpt-6-luna", title: "GPT-6 Luna", provider: "OpenAI" },
 ];
 export const EFFORTS = ["low", "medium", "high"];
+
+/** Agent permissions, read as a traffic light (AgentViews.swift). */
+export const PERMISSIONS = ["look", "ask", "edit", "full"];
+export const PERMISSION_SUMMARY = {
+  look: "Reads files and runs read-only commands; never changes anything",
+  ask: "Asks before every command or change",
+  edit: "Changes files in the project without asking, deletes included; asks before other commands",
+  full: "Runs any command and changes any file without asking",
+};
+export const title = (s) => s[0].toUpperCase() + s.slice(1);
 
 /** Black or white on the accent, by relative luminance, as the app does. */
 export function onAccent(hex) {
@@ -42,6 +52,11 @@ function applyTheme(el, theme) {
     "--bb-num": d ? "#E5BB88" : "#986020",
     "--bb-str": d ? "#A0CCB8" : "#39735C",
     "--bb-com": d ? "#A1A6B3" : "#656968",
+    "--bb-error": theme.error ?? (d ? "#E79891" : "#A94442"),
+    "--bb-look": "#8E8E93",
+    "--bb-ask": d ? "#A0CCB8" : "#39735C",
+    "--bb-edit": d ? "#E5BB88" : "#986020",
+    "--bb-full": theme.error ?? (d ? "#E79891" : "#A94442"),
   };
   for (const [k, v] of Object.entries(vars)) el.style.setProperty(k, v);
   el.style.colorScheme = d ? "dark" : "light";
@@ -132,6 +147,10 @@ export const ICONS = {
   close: svg(10, '<path d="M6 6l12 12M18 6 6 18"/>'),
   back: svg(15, '<path d="M15 5l-7 7 7 7"/>'),
   compose: svg(16, '<path d="M11 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V13"/><path d="M17.8 3.7a1.9 1.9 0 0 1 2.7 2.7L12.6 14.3 9 15l.7-3.6Z"/>'),
+  terminal: svg(15, '<rect x="2.5" y="4" width="19" height="16" rx="3.5"/><path d="m7 9.5 3 2.5-3 2.5M12.5 15h4.5"/>', 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"'),
+  pencil: svg(12, '<path d="M4.5 19.5 6 14 15.5 4.5a2.1 2.1 0 0 1 3 3L9 17Z"/>'),
+  fail: svg(12, '<path d="M6 6l12 12M18 6 6 18"/>'),
+  nosign: svg(12, '<circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/>'),
 };
 
 /** The model chip's effort gauge; effort is 0 (low) … 2 (high), fractional while it sweeps. */
@@ -142,24 +161,39 @@ export function gauge(effort) {
 
 // ——— Markup ——————————————————————————————————————————————————————
 
+function inlineHTML(text) {
+  return segments(text).map((s) => (s.bold ? `<strong>${esc(s.text)}</strong>` : s.code ? `<code>${esc(s.text)}</code>` : esc(s.text))).join("");
+}
 function blockHTML(b) {
+  if (b.kind === "h") return `<p class="bb-h">${esc(b.text)}</p>`;
+  if (b.kind === "keys") return `<div class="bb-keys">${b.rows.map(([k, v]) => `<span class="bb-keys-k">${esc(k)}</span><span>${inlineHTML(v)}</span>`).join("")}</div>`;
   if (b.kind === "code") {
     return `<div class="bb-code"><div class="bb-code-head"><span>${esc(b.lang || "Code")}</span>${ICONS.copy}</div><pre class="bb-pre">${highlightHTML(b.code)}</pre></div>`;
   }
-  const inner = segments(b.text).map((s) => (s.bold ? `<strong>${esc(s.text)}</strong>` : s.code ? `<code>${esc(s.text)}</code>` : esc(s.text))).join("");
-  return `<p class="bb-p">${inner}</p>`;
+  return `<p class="bb-p">${inlineHTML(b.text)}</p>`;
+}
+/** One line per agent action, above the reply. */
+export function stepsHTML(steps) {
+  return `<div class="bb-steps">${steps
+    .map((s) => {
+      const icon = s.status === "running" ? '<span class="bb-spinner"></span>' : s.status === "failed" ? ICONS.fail : s.status === "denied" ? ICONS.nosign : s.kind === "edit" ? ICONS.pencil : ICONS.check;
+      const detail = s.status === "denied" ? "declined" : s.detail;
+      return `<div class="bb-step ${s.status}"><span class="bb-step-icon">${icon}</span><span class="bb-step-title">${esc(s.title)}</span>${detail ? `<span class="bb-step-detail">${esc(detail)}</span>` : ""}</div>`;
+    })
+    .join("")}</div>`;
 }
 export function messageHTML(m) {
   const blocks = m.revealed == null ? m.blocks : sliceBlocks(m.blocks, m.revealed);
   const hasText = blocks.some((b) => (b.kind === "code" ? b.code : b.text).length > 0);
   const label = m.role === "user" ? "You" : m.author ?? "Assistant";
   const head = `<div class="bb-msg-head"><span class="bb-label">${esc(label)}</span>${m.interrupted ? '<span class="bb-badge">Interrupted</span>' : ""}</div>`;
+  const steps = m.steps?.length ? stepsHTML(m.steps) : "";
   const body = hasText
     ? `<div class="bb-body">${blocks.map(blockHTML).join("")}</div>`
-    : m.pending
+    : m.pending && !steps
       ? `<div class="bb-pending"><span class="bb-spinner"></span>${esc(m.activity ?? "Thinking…")}</div>`
       : "";
-  return `<div class="bb-msg">${head}${body}</div>`;
+  return `<div class="bb-msg">${head}${steps}${body}</div>`;
 }
 export function popoverHTML(models, current, effort) {
   const efforts = EFFORTS.map((e) => `<button type="button" data-effort="${e}" class="${e === effort ? "on" : ""}">${e[0].toUpperCase() + e.slice(1)}</button>`).join("");
@@ -169,20 +203,66 @@ export function popoverHTML(models, current, effort) {
   return `<div class="bb-popover" role="dialog" aria-label="Effort and model"><div class="bb-pop-title">Thinking effort</div><div class="bb-segmented">${efforts}</div><div class="bb-pop-divider"></div><div class="bb-models">${rows}</div></div>`;
 }
 
+/** The agent chip: a terminal button when off; with the project and its light when on. */
+export function agentChipHTML(a) {
+  if (!a?.on) {
+    return `<button type="button" class="bb-agent-off${a?.selected ? " on" : ""}" aria-label="Agent mode" aria-pressed="false" title="Agent mode (⌘J)">${ICONS.terminal}${a?.selected ? '<span class="bb-agent-hint">↵ turn on</span>' : ""}</button>`;
+  }
+  const hint = a.hint ? `<span class="bb-agent-hint ${esc(a.hintLevel ?? "")}">${esc(a.hint)}</span>` : "";
+  return `<span class="bb-agent${a.selected ? " on" : ""}"><button type="button" class="bb-agent-switch" aria-label="Turn off agent mode" title="Turn off agent mode · ⌘J">${ICONS.terminal}</button><button type="button" class="bb-agent-project" aria-label="Agent project: ${esc(a.name)}, ${esc(a.permission)}" title="Click to change">${a.nameHTML ?? `<span class="bb-agent-name">${esc(a.name)}</span>`}<span class="bb-dot ${esc(a.permission)}"></span>${hint}</button></span>`;
+}
+export function agentPopoverHTML({ projects, selected, permission, pendingFull, pendingRemoval, session }) {
+  const rows = projects
+    .map((p) => {
+      const removing = pendingRemoval === p.id;
+      return `<button type="button" class="bb-project-row${p.id === selected ? " on" : ""}" data-project="${esc(p.id)}"><span class="bb-dot ${p.permission}"></span><span class="bb-project-text"><span>${esc(p.name)}</span><span class="bb-project-path${removing ? " warn" : ""}">${esc(removing ? "Press ⌫ again to remove from the list" : p.path)}</span></span>${p.id === selected ? ICONS.check : ""}</button>`;
+    })
+    .join("");
+  const levels = PERMISSIONS.map((l) => `<button type="button" data-permission="${l}" class="${l === permission ? "on" : ""}"><span class="bb-dot ${l}"></span>${title(l)}</button>`).join("");
+  const summary = pendingFull
+    ? `<div class="bb-pop-summary warn">Full runs any command and changes any file without asking, for 24 hours. Press → or click Full again to turn it on.</div>`
+    : `<div class="bb-pop-summary">${esc(PERMISSION_SUMMARY[permission])}</div>`;
+  return `<div class="bb-popover bb-agent-popover" role="dialog" aria-label="Agent project and permission">
+    <div class="bb-pop-row"><span class="bb-pop-title">Project</span><span class="bb-dim">↑ ↓</span></div>
+    <div class="bb-projects">${rows}<div class="bb-add-folder"><span>+ Add folder…</span><span class="bb-dim">or drop one on the bar</span></div></div>
+    <div class="bb-pop-divider"></div>
+    <div class="bb-pop-row"><span class="bb-pop-title">Permission</span><span class="bb-dim">← →</span></div>
+    <div class="bb-segmented bb-levels">${levels}</div>${summary}
+    <div class="bb-pop-divider"></div>
+    ${session ? `<button type="button" class="bb-pop-action" data-action="terminal"><span>Continue in terminal</span><span class="bb-dim">${esc(session)}</span></button>` : ""}
+    <button type="button" class="bb-pop-action" data-action="agent-off"><span>Turn off agent mode</span><span class="bb-dim">⌘J</span></button>
+  </div>`;
+}
+/** A permission request, inline above the field: never a modal. */
+export function approvalHTML(a) {
+  const button = (key, label, keys) => `<button type="button" data-approve="${key}" class="${a.pressed === key ? "on" : ""}">${label} <span>${keys}</span></button>`;
+  return `<div class="bb-approval" role="group" aria-label="Permission request"><div class="bb-approval-head"><span class="bb-dim">${esc(a.action)}</span><span class="bb-approval-subject">${esc(a.subject)}</span><span class="bb-flex"></span><span class="bb-dim">in ${esc(a.project)}</span></div><div class="bb-approval-buttons">${button("allow", "Allow", "⌘↵")}${button("chat", "Allow in this chat", "⌥⌘↵")}${button("deny", "Deny", "esc")}</div></div>`;
+}
+export const slashHTML = (matches) =>
+  `<div class="bb-slash" role="listbox" aria-label="Commands">${matches
+    .map((m, i) => `<button type="button" class="bb-slash-row${i === 0 ? " on" : ""}" data-command="${esc(m.command)}"><span class="bb-slash-cmd">${esc(m.command)}</span><span class="bb-slash-sum">${esc(m.summary)}</span>${i === 0 ? '<span class="bb-flex"></span><span class="bb-dim">tab</span>' : ""}</button>`)
+    .join("")}</div>`;
+
 /**
  * Build a panel and return `update(props)`, which repaints only what changed.
  * props: theme, messages, draft, caret, placeholder, model | modelHTML, effort,
  * selectingModel, webSearch, streaming, hasDraft, queue, queueStatus, hint,
  * popoverHTML, threadHeight, and history: { query, items: [{ id, title, date }],
  * total, selected, pending } to show the previous-chats browser instead.
+ * Agent mode: agent (agentChipHTML's input), agentPopoverHTML, approval, slash,
+ * notice, help (blocks shown in place of the thread), tools: { reveal, turn }
+ * to unroll + without a pointer (the trailer).
  */
 export function createBar({ interactive = false } = {}) {
   const el = document.createElement("div");
-  el.className = "bb";
+  el.className = interactive ? "bb" : "bb bb-static";
   el.innerHTML = `
     <div class="bb-move"></div>
     <div class="bb-thread-wrap" hidden><div class="bb-thread"></div><div class="bb-divider"></div></div>
+    <div class="bb-help" hidden><div class="bb-help-head"><button type="button" class="bb-help-back" aria-label="Close help">${ICONS.back}</button><span class="bb-history-title">Boltbar help</span><span class="bb-flex"></span><span class="bb-dim">esc closes</span></div><div class="bb-help-body"></div></div>
     <div class="bb-queue" hidden></div>
+    <div class="bb-approval-slot" hidden></div>
+    <div class="bb-slash-slot" hidden></div>
     <div class="bb-history" hidden>
       <div class="bb-history-head"><button type="button" class="bb-back" aria-label="Back to chat">${ICONS.back}</button><span class="bb-history-title">Previous chats</span><span class="bb-flex"></span><button type="button" class="bb-new" aria-label="New chat">${ICONS.compose}</button></div>
       <div class="bb-search"><span class="bb-prompt">&gt;</span>${
@@ -198,11 +278,11 @@ export function createBar({ interactive = false } = {}) {
         ? '<textarea class="bb-input" rows="1" spellcheck="false" aria-label="Message (simulated)"></textarea>'
         : '<span class="bb-draft"></span><span class="bb-caret"></span><span class="bb-placeholder"></span>'
     }<span class="bb-hint"></span></div>
+    <div class="bb-notice" hidden></div>
     <div class="bb-toolbar">
-      <span class="bb-circle">${ICONS.plus}</span>
       <span class="bb-chip-wrap"><button type="button" class="bb-chip" aria-label="Effort and model"><span class="bb-model"></span><span class="bb-gauge"></span></button><span class="bb-popover-slot"></span></span>
-      <button type="button" class="bb-icon bb-clock" aria-label="Previous chats">${ICONS.history}</button>
-      <button type="button" class="bb-icon bb-globe" aria-label="Search the web" aria-pressed="false">${ICONS.globe}</button>
+      <span class="bb-agent-wrap"><span class="bb-agent-slot"></span><span class="bb-agent-pop-slot"></span></span>
+      <span class="bb-tools"><button type="button" class="bb-plus" aria-label="Attach files" title="Attach images, PDFs or text files">${ICONS.plus}</button><button type="button" class="bb-icon bb-globe" aria-label="Search the web" aria-pressed="false">${ICONS.globe}</button><button type="button" class="bb-icon bb-clock" aria-label="Previous chats">${ICONS.history}</button></span>
       <span class="bb-flex"></span>
       <button type="button" class="bb-stop2" aria-label="Stop" hidden>${ICONS.stop(11)}</button>
       <button type="button" class="bb-send" aria-label="Send">${ICONS.arrowUp}</button>
@@ -216,6 +296,8 @@ export function createBar({ interactive = false } = {}) {
     history: $(".bb-history"), list: $(".bb-history-list"), searchInput: $(".bb-search-input"),
     searchText: $(".bb-search-text"), searchCaret: $(".bb-search-caret"), searchPlaceholder: $(".bb-search-placeholder"),
     composer: $(".bb-composer"), toolbar: $(".bb-toolbar"),
+    help: $(".bb-help"), helpBody: $(".bb-help-body"), approval: $(".bb-approval-slot"), slash: $(".bb-slash-slot"), notice: $(".bb-notice"),
+    agent: $(".bb-agent-slot"), agentPop: $(".bb-agent-pop-slot"), tools: $(".bb-tools"), plus: $(".bb-plus svg"),
   };
   const memo = {};
   const set = (key, value, apply) => {
@@ -228,15 +310,8 @@ export function createBar({ interactive = false } = {}) {
     set("theme", p.theme, (t) => applyTheme(el, t));
     // The history browser replaces the thread, queue, composer and toolbar.
     const h = p.history;
-    set("historyOpen", !!h, (open) => {
-      refs.history.hidden = !open;
-      refs.composer.hidden = refs.toolbar.hidden = open;
-      if (open) refs.threadWrap.hidden = refs.queue.hidden = true;
-      else {
-        refs.threadWrap.hidden = memo.messages === "";
-        refs.queue.hidden = memo.queue === "";
-      }
-    });
+    refs.history.hidden = !h;
+    refs.composer.hidden = refs.toolbar.hidden = !!h;
     if (h) {
       const rows = h.items.length
         ? h.items.map((item) => {
@@ -262,26 +337,30 @@ export function createBar({ interactive = false } = {}) {
       }
     }
     const messages = p.messages ?? [];
-    set("messages", messages.map(messageHTML).join(""), (html) => {
-      refs.thread.innerHTML = html;
-      refs.threadWrap.hidden = html === "" || !!h;
-    });
+    set("messages", messages.map(messageHTML).join(""), (html) => (refs.thread.innerHTML = html));
+    set("help", p.help ? p.help.map(blockHTML).join("") : "", (html) => (refs.helpBody.innerHTML = html));
+    refs.help.hidden = !p.help || !!h;
+    refs.threadWrap.hidden = memo.messages === "" || !!h || !!p.help;
     set("threadHeight", p.threadHeight ?? 330, (h) => (refs.thread.style.maxHeight = `${h}px`));
     const queue = p.queue ?? [];
     const queueHTML = queue.length
       ? `<div class="bb-queue-head"><span class="bb-label">${queue.length > 1 ? `Queued · ${queue.length}` : "Queued"}</span><span class="bb-queue-status">${esc(p.queueStatus ?? "")}</span><span class="bb-flex"></span><button type="button" class="bb-send-now">${p.hasDraft ? "Send now" : "Send now ↵"}</button></div>` +
         queue.map((q) => `<div class="bb-queue-row"><span class="bb-queue-text">${esc(q.text)}</span><button type="button" class="bb-queue-remove" data-remove="${esc(q.id)}" aria-label="Remove queued message">${ICONS.close}</button></div>`).join("")
       : "";
-    set("queue", queueHTML, (html) => {
-      refs.queue.innerHTML = html;
-      refs.queue.hidden = html === "" || !!h;
-    });
+    set("queue", queueHTML, (html) => (refs.queue.innerHTML = html));
+    refs.queue.hidden = memo.queue === "" || !!h;
+    set("approval", p.approval ? approvalHTML(p.approval) : "", (html) => (refs.approval.innerHTML = html));
+    refs.approval.hidden = memo.approval === "" || !!h;
+    set("slash", p.slash?.length ? slashHTML(p.slash) : "", (html) => (refs.slash.innerHTML = html));
+    refs.slash.hidden = memo.slash === "" || !!h;
+    set("notice", p.notice ?? "", (v) => (refs.notice.textContent = v));
+    refs.notice.hidden = !p.notice || !!h;
     if (interactive) {
       set("placeholder", p.placeholder ?? "Ask anything…", (v) => (refs.input.placeholder = v));
     } else {
-      set("draft", p.draft ?? "", (v) => {
-        refs.draft.textContent = v;
-        refs.placeholder.textContent = v ? "" : p.placeholder ?? "Ask anything…";
+      set("draft", `${p.draft ?? ""}\u0000${p.placeholder ?? ""}`, () => {
+        refs.draft.textContent = p.draft ?? "";
+        refs.placeholder.textContent = p.draft ? "" : p.placeholder ?? "Ask anything…";
       });
       set("caret", !!p.caret, (v) => (refs.caret.style.visibility = v ? "visible" : "hidden"));
     }
@@ -294,9 +373,31 @@ export function createBar({ interactive = false } = {}) {
     set("effort", effort.toFixed(3), () => (refs.gauge.innerHTML = gauge(effort)));
     set("selecting", !!p.selectingModel, (v) => refs.chip.classList.toggle("on", v));
     set("popover", p.popoverHTML ?? "", (html) => (refs.popover.innerHTML = html));
+    set("agent", agentChipHTML(p.agent), (html) => (refs.agent.innerHTML = html));
+    set("agentPop", p.agentPopoverHTML ?? "", (html) => {
+      refs.agentPop.innerHTML = html;
+      // Keep the popover inside the bar on narrow screens; its arrow stays on the chip.
+      const pop = refs.agentPop.firstElementChild;
+      if (!pop) return;
+      const shift = Math.max(0, pop.getBoundingClientRect().right - (el.getBoundingClientRect().right - 8));
+      pop.style.left = `${-shift}px`;
+      pop.style.setProperty("--arrow", `${28 + shift}px`);
+    });
+    // Without a pointer (the trailer), + unrolls from props; in the page, on hover.
+    if (p.tools) {
+      set("tools", `${p.tools.reveal.toFixed(3)}|${(p.tools.turn ?? 0).toFixed(2)}`, () => {
+        refs.tools.style.setProperty("--reveal", p.tools.reveal.toFixed(3));
+        refs.plus.style.transform = `rotate(${(p.tools.turn ?? 0).toFixed(2)}deg)`;
+      });
+    }
     set("web", !!p.webSearch, (v) => {
       refs.globe.classList.toggle("on", v);
       refs.globe.setAttribute("aria-pressed", String(v));
+      refs.tools.classList.toggle("pinned", v);
+    });
+    set("agentMode", !!p.agent?.on, (v) => {
+      refs.globe.disabled = v;
+      refs.globe.title = v ? "Web search is off in agent mode" : "Search the web";
     });
     // During a reply, text turns the main button into "queue" and Stop moves beside it.
     const stops = !!p.streaming && !p.hasDraft;

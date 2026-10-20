@@ -30,6 +30,7 @@ const REPLIES = [
       { kind: "p", text: "**⌥ Space** opens Boltbar over any app, and **Esc** hides it again." },
       { kind: "p", text: "With an empty message, **↑ ↓** switch models and **← →** set the thinking effort. **→** opens your previous chats." },
       { kind: "p", text: "**Return** sends. While a reply streams, Return queues your next message instead." },
+      { kind: "p", text: "**⌘J** turns on agent mode, and **Tab** walks to the model and agent chips. Type **/help** for everything else." },
     ],
   },
   {
@@ -77,7 +78,7 @@ const REPLIES = [
   {
     match: /search|web|internet|source|cite/i,
     blocks: () => [
-      { kind: "p", text: "Turn on the globe and the model can search the web when it needs to. Answers come back with numbered citations and a line listing their sources." },
+      { kind: "p", text: "Hover **+** for the globe. Turn it on and the model can search the web when it needs to. Answers come back with numbered citations and a line listing their sources." },
     ],
   },
 ];
@@ -87,6 +88,6 @@ export function replyTo(text, model) {
   if (found) return found.blocks(model);
   return [
     { kind: "p", text: "This bar is a simulation running in your browser, so I can't really answer that one." },
-    { kind: "p", text: `In Boltbar your message goes straight to **${model}**. Here, try asking for some code, the shortcuts, or how privacy works.` },
+    { kind: "p", text: `In Boltbar your message goes straight to **${model}**. Here, try asking for some code, the shortcuts, or how privacy works, or press ⌘J and give the agent a job.` },
   ];
 }

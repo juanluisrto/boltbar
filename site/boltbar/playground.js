@@ -1,12 +1,15 @@
 // Boltbar in the browser: the app's keys and rules, with canned replies.
 // Text written during a reply queues and goes out with the next turn; → opens
-// previous chats; Esc hides the bar and ⌥ Space brings it back.
-import { createBar, popoverHTML, totalLength, EFFORTS, MODELS, THEMES } from "/boltbar/bar.js";
-import { replyTo } from "/boltbar/replies.js";
-import { HISTORY, dateLabel, matches } from "/boltbar/history-data.js";
+// previous chats; Esc hides the bar and ⌥ Space brings it back. ⌘J turns on
+// agent mode, where a scripted Claude Code or Codex works in a demo project.
+import { createBar, popoverHTML, agentPopoverHTML, totalLength, EFFORTS, MODELS, PERMISSIONS, THEMES } from "/boltbar/bar.js?v=0.6.0";
+import { replyTo } from "/boltbar/replies.js?v=0.6.0";
+import { HISTORY, dateLabel, matches } from "/boltbar/history-data.js?v=0.6.0";
+import { PROJECTS, COMMANDS, HELP, agentScript, sessionId } from "/boltbar/agent-data.js?v=0.6.0";
 
 const CHARS_PER_SECOND = 170;
 const INTERRUPT_DELAY = 600;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function mountPlayground(root) {
   const stage = root.querySelector("[data-stage]");
@@ -37,12 +40,32 @@ export function mountPlayground(root) {
     chats: HISTORY.map((c) => ({ ...c, date: dateLabel(c) })),
     history: null, // { query, selected, pending, onList }
     lastHistory: null, // where ← returns to, after opening a chat from history
+    // Agent mode
+    agent: false,
+    agentSel: false, // the chip is outlined and takes the arrows
+    agentPop: false,
+    projects: PROJECTS.map((p) => ({ ...p })),
+    project: PROJECTS[0].id,
+    pendingFull: null,
+    pendingRemoval: null,
+    run: null, // the agent's turn while it works: { cancelled }
+    approval: null, // { action, subject, project, resolve }
+    allowed: new Set(), // "Allow in this chat"
+    session: null, // { cli, id, project }: the CLI session behind this chat
+    help: false,
+    notice: "",
   };
   const used = new Set();
-  const streaming = () => st.stream !== null;
+  const streaming = () => st.stream !== null || st.run !== null;
   const draft = () => input.value;
   const hasDraft = () => draft().trim().length > 0;
   const visibleChats = () => st.chats.filter((c) => matches(c, st.history?.query ?? ""));
+  const project = () => st.projects.find((p) => p.id === st.project) ?? st.projects[0];
+  const cli = () => (MODELS[st.model].provider === "Anthropic" ? "claude" : "codex");
+  const slashMatches = () => {
+    const text = draft().toLowerCase();
+    return text.startsWith("/") && !/\s/.test(text) ? COMMANDS.filter((c) => c.command.startsWith(text)) : [];
+  };
 
   function use(skill) {
     if (used.has(skill)) return;
@@ -54,20 +77,35 @@ export function mountPlayground(root) {
     const queueStatus = st.held ? "Paused" : st.queue.length > 1 ? "Sent together when this reply finishes" : "Sends when this reply finishes";
     const hint = !draft() && st.queue.length ? (streaming() ? "↵ interrupt and send" : "↵ send queued") : "";
     const h = st.history;
+    const proj = project();
+    let agentHint = null, hintLevel = null;
+    if (st.agentSel && st.agent) {
+      if (st.pendingRemoval === proj.id) (agentHint = "⌫ again removes"), (hintLevel = "error");
+      else if (st.pendingFull === proj.id) (agentHint = "→ again for full"), (hintLevel = "full");
+      else (agentHint = proj.permission), (hintLevel = proj.permission);
+    }
     bar.update({
       theme: THEMES[st.theme],
       messages: st.messages,
       model: MODELS[st.model].title,
       effort: st.effort,
       selectingModel: st.selecting,
-      webSearch: st.web,
+      webSearch: st.web && !st.agent,
       streaming: streaming(),
       hasDraft: hasDraft(),
       queue: st.queue,
       queueStatus,
       hint,
-      placeholder: streaming() || st.queue.length ? "Queue a follow-up…" : "Ask anything…",
+      placeholder: streaming() || st.queue.length ? "Queue a follow-up…" : st.agent ? `Tell it what to do in ${proj.name}…` : "Ask anything…",
       popoverHTML: st.popover ? popoverHTML(MODELS, MODELS[st.model].id, st.effort) : "",
+      agent: { on: st.agent, selected: st.agentSel, name: proj.name, permission: proj.permission, hint: agentHint, hintLevel },
+      agentPopoverHTML: st.agentPop
+        ? agentPopoverHTML({ projects: st.projects, selected: proj.id, permission: proj.permission, pendingFull: st.pendingFull === proj.id, pendingRemoval: st.pendingRemoval, session: st.session ? `${st.session.cli} ${st.session.cli === "claude" ? "--resume" : "resume"}` : null })
+        : "",
+      approval: st.approval,
+      slash: st.help || st.history ? [] : slashMatches(),
+      help: st.help ? HELP : null,
+      notice: st.notice,
       history: h ? { query: h.query, items: visibleChats(), total: st.chats.length, selected: h.selected, pending: h.pending } : null,
     });
     stage.dataset.visible = String(st.visible);
@@ -78,20 +116,94 @@ export function mountPlayground(root) {
     input.style.height = `${Math.min(160, Math.max(22, input.scrollHeight))}px`;
   }
 
+  let noticeTimer = 0;
+  function notify(text) {
+    st.notice = text;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => ((st.notice = ""), render()), 4000);
+    render();
+  }
+
   // ——— Conversation ————————————————————————————————————————————————
 
   function begin(asked) {
     const model = MODELS[st.model];
-    const reply = replyTo(asked.join(" "), model.title);
     const replyId = id();
     st.chatId ??= id();
     st.dirty = true;
+    st.help = false;
+    const users = asked.map((text) => ({ id: id(), role: "user", blocks: [{ kind: "p", text }] }));
+    if (st.agent) {
+      st.messages = [...st.messages, ...users, { id: replyId, role: "assistant", author: model.provider, blocks: [], steps: [], pending: true }];
+      runAgent(replyId, asked.join(" "));
+      return render();
+    }
+    const reply = replyTo(asked.join(" "), model.title);
     st.stream = { id: replyId, start: performance.now(), length: totalLength(reply), delay: st.web ? 1400 : 550 };
-    st.messages = [
-      ...st.messages,
-      ...asked.map((text) => ({ id: id(), role: "user", blocks: [{ kind: "p", text }] })),
-      { id: replyId, role: "assistant", author: model.provider, blocks: reply, pending: true, revealed: 0, activity: st.web ? "Searching the web…" : undefined },
-    ];
+    st.messages = [...st.messages, ...users, { id: replyId, role: "assistant", author: model.provider, blocks: reply, pending: true, revealed: 0, activity: st.web ? "Searching the web…" : undefined }];
+    render();
+  }
+
+  function setStep(messageId, step) {
+    st.messages = st.messages.map((m) => {
+      if (m.id !== messageId) return m;
+      const steps = m.steps.some((s) => s.id === step.id) ? m.steps.map((s) => (s.id === step.id ? step : s)) : [...m.steps, step];
+      return { ...m, steps };
+    });
+    render();
+  }
+  function askApproval(request) {
+    return new Promise((resolve) => {
+      st.approval = { ...request, resolve };
+      render();
+    });
+  }
+  function resolveApproval(decision) {
+    const a = st.approval;
+    if (!a) return false;
+    st.approval = null;
+    if (decision !== "deny") use("approve");
+    a.resolve(decision);
+    render();
+    return true;
+  }
+
+  /** One agent turn: its steps, the approvals the permission calls for, then the reply. */
+  async function runAgent(messageId, text) {
+    const run = { cancelled: false };
+    st.run = run;
+    const proj = project();
+    const level = proj.permission;
+    // A chat keeps one CLI session; another project or CLI starts a new one.
+    if (!st.session || st.session.project !== proj.id || st.session.cli !== cli()) st.session = { cli: cli(), id: sessionId(), project: proj.id, path: proj.path };
+    const script = agentScript(text);
+    const steps = level === "look" ? script.steps.filter((s) => s.kind !== "edit" && !s.asks?.includes("edit")) : script.steps;
+    let outcome = level === "look" && script.fix ? "look" : "done";
+    await sleep(400);
+    for (const s of steps) {
+      if (run.cancelled) return;
+      const { asks, approval, detail, ...line } = s;
+      setStep(messageId, { ...line, status: "running" });
+      await sleep(s.kind === "command" ? 650 : 420);
+      if (run.cancelled) return;
+      if (asks?.includes(level) && !st.allowed.has(approval.subject)) {
+        const decision = await askApproval({ ...approval, project: proj.name });
+        if (run.cancelled) return;
+        if (decision === "deny") {
+          setStep(messageId, { ...line, status: "denied" });
+          outcome = s.kind === "edit" ? "deniedEdit" : "deniedCommand";
+          break;
+        }
+        if (decision === "chat") st.allowed.add(approval.subject);
+        await sleep(450);
+        if (run.cancelled) return;
+      }
+      setStep(messageId, { ...line, status: "done", detail });
+    }
+    const reply = script.replies[outcome];
+    st.run = null;
+    st.messages = st.messages.map((m) => (m.id === messageId ? { ...m, blocks: reply, revealed: 0 } : m));
+    st.stream = { id: messageId, start: performance.now(), length: totalLength(reply), delay: 120 };
     render();
   }
 
@@ -119,10 +231,18 @@ export function mountPlayground(root) {
   requestAnimationFrame(tick);
 
   function stop() {
-    const s = st.stream;
-    if (!s) return;
+    if (!streaming()) return;
+    // A stopped turn answers its open permission request with a refusal.
+    if (st.run) {
+      st.run.cancelled = true;
+      resolveApproval("deny");
+    }
+    const replyId = st.stream?.id ?? st.messages[st.messages.length - 1]?.id;
     st.stream = null;
-    st.messages = st.messages.map((m) => (m.id === s.id ? { ...m, pending: false, interrupted: true } : m));
+    st.run = null;
+    st.messages = st.messages.map((m) =>
+      m.id === replyId ? { ...m, pending: false, interrupted: true, steps: m.steps?.map((s) => (s.status === "running" ? { ...s, status: "failed", detail: "stopped" } : s)) } : m,
+    );
     if (st.queue.length) st.held = true;
     render();
   }
@@ -141,6 +261,10 @@ export function mountPlayground(root) {
       if (streaming() && performance.now() - st.queuedAt < INTERRUPT_DELAY) return;
       sendQueue();
       return;
+    }
+    if (COMMANDS.some((c) => c.command === value.toLowerCase())) {
+      input.value = "";
+      return runCommand(value.toLowerCase());
     }
     input.value = "";
     st.selecting = false;
@@ -167,7 +291,132 @@ export function mountPlayground(root) {
     st.queue = [];
     st.held = false;
     st.lastHistory = null;
+    st.session = null;
+    st.allowed = new Set();
+    st.help = false;
     input.value = "";
+  }
+
+  // ——— Commands, help and the terminal ——————————————————————————————————
+
+  function runCommand(command) {
+    endSelection();
+    if (command === "/help") return showHelp();
+    if (command === "/new") return newChat(), render();
+    if (command === "/agent") return toggleAgent(false);
+    if (command === "/terminal") return copyTerminal();
+  }
+  function showHelp() {
+    st.history = null;
+    st.help = true;
+    use("help");
+    render();
+  }
+  function closeHelp() {
+    st.help = false;
+    render();
+  }
+  function copyTerminal() {
+    const s = st.session;
+    if (!s) return notify("No agent session yet: send a message in agent mode first.");
+    const command = `cd ${s.path} && ${s.cli === "claude" ? `claude --resume ${s.id}` : `codex resume ${s.id}`}`;
+    navigator.clipboard?.writeText(command).catch(() => {});
+    use("terminal");
+    st.agentPop = false;
+    notify(`Copied: ${command}`);
+  }
+
+  // ——— Agent mode: the chip, its keys and its popover —————————————————————
+
+  function endSelection() {
+    const active = st.selecting || st.popover || st.agentSel || st.agentPop;
+    st.selecting = st.popover = st.agentSel = st.agentPop = false;
+    st.pendingFull = st.pendingRemoval = null;
+    return active;
+  }
+  /** ⌘J and the terminal button. Turning it on outlines the chip; ↵ on the chip keeps it outlined either way. */
+  function toggleAgent(keepSelection) {
+    st.agent = !st.agent;
+    st.selecting = st.popover = st.agentPop = false;
+    st.pendingFull = st.pendingRemoval = null;
+    st.agentSel = st.agent || keepSelection;
+    if (st.agent) use("agent");
+    render();
+  }
+  /** Tab walks to the model chip, then the agent chip, and stays; ⇧Tab walks back. */
+  function walkChips(forward) {
+    const onChip = st.selecting || st.popover || st.agentSel || st.agentPop;
+    const toAgent = forward && onChip;
+    st.popover = st.agentPop = false;
+    st.selecting = !toAgent;
+    st.agentSel = toAgent;
+    st.pendingFull = st.pendingRemoval = null;
+    use("chips");
+    render();
+  }
+  function cycleProject(direction) {
+    const at = st.projects.findIndex((p) => p.id === st.project);
+    st.project = st.projects[(at + direction + st.projects.length) % st.projects.length].id;
+    st.pendingFull = st.pendingRemoval = null;
+    render();
+  }
+  function setPermission(level) {
+    project().permission = level;
+    st.pendingFull = st.pendingRemoval = null;
+    use("permission");
+    render();
+  }
+  /** Full takes a second press, from the keys or the popover. */
+  function choosePermission(level) {
+    const proj = project();
+    if (level === proj.permission) return (st.pendingFull = null), render();
+    if (level === "full" && st.pendingFull !== proj.id) {
+      st.pendingRemoval = null;
+      st.pendingFull = proj.id;
+      return render();
+    }
+    setPermission(level);
+  }
+  function stepPermission(direction) {
+    const proj = project();
+    if (direction < 0 && st.pendingFull === proj.id) return (st.pendingFull = null), render();
+    const at = PERMISSIONS.indexOf(proj.permission);
+    choosePermission(PERMISSIONS[Math.min(PERMISSIONS.length - 1, Math.max(0, at + direction))]);
+  }
+  function requestRemoval() {
+    const proj = project();
+    st.pendingFull = null;
+    if (st.pendingRemoval !== proj.id) return (st.pendingRemoval = proj.id), render();
+    if (st.projects.length > 1) {
+      const at = st.projects.findIndex((p) => p.id === proj.id);
+      st.projects = st.projects.filter((p) => p.id !== proj.id);
+      st.project = st.projects[Math.min(at, st.projects.length - 1)].id;
+    }
+    st.pendingRemoval = null;
+    render();
+  }
+  /** The arrows and Return on the agent chip; false lets the key through. */
+  function agentKey(e) {
+    if (!(st.agentSel || st.agentPop) || e.key === "Tab") return false;
+    if (!st.agent) {
+      if (e.key === "Enter") toggleAgent(true);
+      else if (e.key === "Escape") endSelection(), render();
+      else if (!e.key.startsWith("Arrow")) return endSelection(), render(), false;
+      return true;
+    }
+    switch (e.key) {
+      case "ArrowDown": case "ArrowUp": cycleProject(e.key === "ArrowDown" ? 1 : -1); break;
+      case "ArrowLeft": case "ArrowRight": stepPermission(e.key === "ArrowRight" ? 1 : -1); break;
+      case "Backspace": case "Delete": requestRemoval(); break;
+      case "Enter":
+        // In the popover a click opened, Return just closes it.
+        if (st.agentSel && !st.agentPop) toggleAgent(true);
+        else endSelection(), render();
+        break;
+      case "Escape": endSelection(); render(); break;
+      default: endSelection(); render(); return false;
+    }
+    return true;
   }
 
   // ——— History ——————————————————————————————————————————————————————
@@ -185,8 +434,8 @@ export function mountPlayground(root) {
   }
   function openHistory(resume) {
     saveChat();
-    st.selecting = false;
-    st.popover = false;
+    endSelection();
+    st.help = false;
     st.history = resume && st.lastHistory ? { ...st.lastHistory, pending: null, onList: false } : { query: "", selected: st.chats[0]?.id ?? null, pending: null, onList: false };
     searchInput.value = st.history.query;
     use("history");
@@ -210,7 +459,11 @@ export function mountPlayground(root) {
   function openChat(chatId) {
     const chat = st.chats.find((c) => c.id === chatId);
     if (!chat) return;
-    if (chat.id !== st.chatId) stop();
+    if (chat.id !== st.chatId) {
+      stop();
+      st.session = null;
+      st.allowed = new Set();
+    }
     st.lastHistory = { query: st.history.query, selected: chat.id };
     st.messages = chat.messages.map((m) => ({ ...m }));
     st.chatId = chat.id;
@@ -291,6 +544,7 @@ export function mountPlayground(root) {
   function cycle(direction) {
     st.model = (st.model + direction + MODELS.length) % MODELS.length;
     st.selecting = true;
+    st.agentSel = false;
     use("models");
     render();
   }
@@ -301,8 +555,7 @@ export function mountPlayground(root) {
   }
   function hide() {
     st.visible = false;
-    st.selecting = false;
-    st.popover = false;
+    endSelection();
     use("hide");
     render();
   }
@@ -319,17 +572,25 @@ export function mountPlayground(root) {
   }
 
   input.addEventListener("input", () => {
-    if (input.value) st.selecting = false;
+    if (input.value) {
+      st.selecting = st.agentSel = false;
+      st.pendingFull = st.pendingRemoval = null;
+    }
     render();
   });
   input.addEventListener("mousedown", () => {
-    if (st.selecting) {
-      st.selecting = false;
+    if (st.selecting || st.agentSel) {
+      endSelection();
       render();
     }
   });
   input.addEventListener("keydown", (e) => {
-    if (e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.isComposing) return;
+    // ⌘↵ allows and ⌥⌘↵ allows in this chat: never a bare Return, which is too easy to press twice.
+    if (e.metaKey && e.key === "Enter" && st.approval) return e.preventDefault(), e.repeat || resolveApproval(e.altKey ? "chat" : "allow");
+    if (e.metaKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "j") return e.preventDefault(), toggleAgent(false);
+    if (e.metaKey && e.shiftKey && (e.key === "?" || e.key === "/")) return e.preventDefault(), showHelp();
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const empty = draft().length === 0;
     const arrow = { ArrowDown: 1, ArrowUp: -1 }[e.key];
     const side = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
@@ -338,13 +599,19 @@ export function mountPlayground(root) {
       if (side) return e.preventDefault(), step(side);
       if (e.key === "Enter" || e.key === "Escape") return e.preventDefault(), (st.popover = false), render();
     }
+    if (agentKey(e)) return e.preventDefault();
     if (e.key === "Escape") {
       e.preventDefault();
-      if (st.selecting) {
-        st.selecting = false;
-        render();
-      } else hide();
+      if (resolveApproval("deny")) return;
+      if (st.help) return closeHelp();
+      if (endSelection()) return render();
+      hide();
       return;
+    }
+    if (e.key === "Tab") {
+      const matchesNow = slashMatches();
+      if (matchesNow.length && !e.shiftKey) return e.preventDefault(), (input.value = matchesNow[0].command), render();
+      if (empty) return e.preventDefault(), walkChips(!e.shiftKey);
     }
     if (empty && !e.shiftKey && arrow && !streaming()) return e.preventDefault(), cycle(arrow);
     if (empty && st.selecting && side) return e.preventDefault(), step(side);
@@ -375,13 +642,25 @@ export function mountPlayground(root) {
       if (e.target.closest(".bb-composer, .bb-thread")) input.focus();
       return;
     }
+    const refocus = () => input.focus({ preventScroll: true });
     if (target.matches(".bb-send")) return target.dataset.action === "stop" ? stop() : send();
     if (target.matches(".bb-stop2")) return stop();
+    if (target.matches(".bb-plus")) return notify("In the app, + attaches images, PDFs and text files.");
     if (target.matches(".bb-globe")) return (st.web = !st.web), render();
     if (target.matches(".bb-clock")) return openHistory(false);
     if (target.matches(".bb-back")) return closeHistory();
     if (target.matches(".bb-new")) return newChat(), closeHistory();
-    if (target.matches(".bb-chip")) return (st.popover = !st.popover), (st.selecting = false), render();
+    if (target.matches(".bb-help-back")) return closeHelp(), refocus();
+    if (target.matches(".bb-chip")) return (st.popover = !st.popover), (st.selecting = st.agentSel = st.agentPop = false), render();
+    if (target.matches(".bb-agent-off")) return toggleAgent(false), refocus();
+    if (target.matches(".bb-agent-switch")) return toggleAgent(false), refocus();
+    if (target.matches(".bb-agent-project")) return (st.agentPop = !st.agentPop), (st.popover = st.selecting = false), render(), refocus();
+    if (target.dataset.project) return (st.project = target.dataset.project), (st.pendingFull = st.pendingRemoval = null), render(), refocus();
+    if (target.dataset.permission) return choosePermission(target.dataset.permission), refocus();
+    if (target.dataset.action === "terminal") return copyTerminal(), refocus();
+    if (target.dataset.action === "agent-off") return toggleAgent(false), refocus();
+    if (target.dataset.approve) return resolveApproval(target.dataset.approve), refocus();
+    if (target.dataset.command) return (input.value = ""), runCommand(target.dataset.command), refocus();
     if (target.matches(".bb-send-now")) return sendQueue();
     if (target.dataset.remove) {
       st.queue = st.queue.filter((q) => q.id !== target.dataset.remove);
@@ -394,14 +673,14 @@ export function mountPlayground(root) {
       st.popover = false;
       use("models");
       render();
-      input.focus({ preventScroll: true });
+      refocus();
     }
   });
   document.addEventListener("mousedown", (e) => {
-    if (st.popover && !e.target.closest(".bb-chip-wrap")) {
-      st.popover = false;
-      render();
-    }
+    let changed = false;
+    if (st.popover && !e.target.closest(".bb-chip-wrap")) (st.popover = false), (changed = true);
+    if (st.agentPop && !e.target.closest(".bb-agent-wrap")) (st.agentPop = false), (st.pendingFull = null), (changed = true);
+    if (changed) render();
   });
 
   hiddenNote.addEventListener("click", summon);
@@ -410,6 +689,10 @@ export function mountPlayground(root) {
       if (!st.visible) summon();
       if (st.history) closeHistory();
       if (b.dataset.suggest === "history") return openHistory(false);
+      if (b.dataset.suggest === "/help") return showHelp();
+      // Agent suggestions turn agent mode on first; chat suggestions turn it off.
+      const wantsAgent = "agent" in b.dataset;
+      if (wantsAgent !== st.agent) toggleAgent(false), endSelection();
       send(b.dataset.suggest);
     });
   }

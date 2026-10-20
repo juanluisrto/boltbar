@@ -25,13 +25,19 @@ then open http://localhost:4173/boltbar/ (and http://localhost:4173/trailer/).
 
 ## The bar and its simulator
 
-`bar.js` and `bar.css` recreate the panel from `Views.swift` and
-`HistoryView.swift`: palettes, the code highlighter, message and queue layout,
-the model chip with its effort gauge, and the previous-chats browser.
+`bar.js` and `bar.css` recreate the panel from `Views.swift`,
+`AgentViews.swift` and `HistoryView.swift`: palettes, the code highlighter,
+message and queue layout, the model chip with its effort gauge, the agent chip
+with its permission light and popover, step lines, approval cards, the slash
+menu, the help pane, the notice line, + unrolling the globe and history, and
+the previous-chats browser.
 `playground.js` drives it with the app's keys and rules (Return queues during a
 reply, ↑/↓ and ←/→, → for history with search, ← back, ⌫ twice to delete, Esc
-and ⌥ Space with the summon rule of 0.5.0). `replies.js` holds the canned
-answers and `history-data.js` the example chats. Keep them in step with the app
+and ⌥ Space with the summon rule of 0.5.0) and agent mode's (⌘J, Tab between
+the chips, ↑/↓ project and ←/→ permission with Full on a second press, ↵ on the
+chip, ⌘↵/⌥⌘↵/Esc for approvals, /help, /terminal). `replies.js` holds the
+canned answers, `history-data.js` the example chats, and `agent-data.js` the
+demo projects, the commands, the help text and the scripted agent runs. Keep them in step with the app
 when its interface changes.
 
 The page uses no web fonts: everything is set in the system monospace
@@ -40,15 +46,17 @@ The page uses no web fonts: everything is set in the system monospace
 ## The trailer
 
 `site/trailer/` is the trailer's source and is not uploaded. `trailer.js` paints
-every frame as a function of time, reusing `bar.js`. Open
+every frame as a function of time, reusing `bar.js`. It runs 45 s: agent mode
+is spliced in at 25 s, and the scenes after it keep their original times in the
+code and play 9 s later. Open
 http://localhost:4173/trailer/ to preview it (`?t=12.5` freezes a frame), and
 render it with headless Chrome and ffmpeg:
 
-    node site/trailer/render.mjs                    # site/boltbar/assets/trailer.mp4
-    node site/trailer/render.mjs --stills 6.2,33 --dir /tmp/stills
+    node site/trailer/render.mjs --workers 6        # site/boltbar/assets/trailer.mp4
+    node site/trailer/render.mjs --stills 6.2,42 --dir /tmp/stills
 
 `render.mjs` serves `site/` itself and uses the installed Google Chrome. The
 poster and the social image come from stills:
 
     ffmpeg -i t6.20.png -q:v 3 site/boltbar/assets/poster.jpg
-    ffmpeg -i t33.00.png -vf "crop=1920:1008:0:36,scale=1200:630" site/boltbar/assets/og.png
+    ffmpeg -i t42.00.png -vf "crop=1920:1008:0:36,scale=1200:630" site/boltbar/assets/og.png
