@@ -6,7 +6,7 @@ final class MarkTests: XCTestCase {
     func testStatusImageIsATemplateAtMenuBarSize() {
         let image = Mark.statusImage()
         XCTAssertTrue(image.isTemplate)
-        XCTAssertEqual(image.size, NSSize(width: 27, height: 12))
+        XCTAssertEqual(image.size, NSSize(width: 18, height: 8))
         XCTAssertEqual(image.accessibilityDescription, "Boltbar")
     }
 

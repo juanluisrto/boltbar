@@ -6,7 +6,7 @@ enum Mark {
     static let aspect: CGFloat = 1285 / 575
 
     /// Monochrome template for the menu bar, drawn at the screen's scale.
-    static func statusImage(height: CGFloat = 12) -> NSImage {
+    static func statusImage(height: CGFloat = 8) -> NSImage {
         let image = NSImage(size: NSSize(width: (height * aspect).rounded(), height: height), flipped: false) { rect in
             path(in: rect).fill(); return true
         }
