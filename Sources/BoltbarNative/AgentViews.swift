@@ -334,7 +334,7 @@ enum HelpContent {
         - Amber, Edit: changes files in the project without asking, deletes included, and asks before other commands or changes outside it.
         - Red, Full: runs any command and changes any file without asking. It takes a second → or click, and returns to Ask after 24 hours unless you turn that off in Settings.
 
-        Each project remembers its permission. With an empty message, Tab outlines the model chip, Tab again the agent chip, and ⇧Tab goes back; with agent mode off, ↵ on its chip turns it on. Click the terminal icon to turn it off. On the agent chip, ↑ ↓ change project, ← → change permission, ⌫ twice removes a project from the list (the folder is untouched); click it for the full list. Drop a folder on the bar to add it; the first project is your Documents folder.
+        Each project remembers its permission. With an empty message, Tab outlines the model chip, Tab again the agent chip, and ⇧Tab goes back. ↵ on the agent chip turns agent mode on or off, as does a click on the terminal icon. On the agent chip, ↑ ↓ change project, ← → change permission, ⌫ twice removes a project from the list (the folder is untouched); click it for the full list. Drop a folder on the bar to add it; the first project is your Documents folder.
 
         When it asks, ⌘↵ allows, ⌥⌘↵ allows the same thing for the rest of the chat, and Esc denies. Stop denies anything still waiting. Web search is off in agent mode.
 

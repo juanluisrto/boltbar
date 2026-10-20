@@ -173,13 +173,13 @@ struct GrowingEditor: NSViewRepresentable {
             guard let match = HelpContent.commands.first(where: { $0.command.hasPrefix(typed) }) else { return false }
             model.draft = match.command; return true
         }
-        // On the agent chip: ↑ ↓ project, ← → permission, ⌫ twice removes, ↵ done. Off, ↵ turns it on.
+        // On the agent chip: ↑ ↓ project, ← → permission, ⌫ twice removes, ↵ turns agent mode on or off.
         text.onAgentKey = { code in
             guard model.selectingAgent || model.showingAgentPicker else { return false }
             if code == 48 { return false } // Tab stays here; ⇧Tab goes back.
             if !model.agentMode {
                 switch code {
-                case 36: model.toggleAgentMode()
+                case 36: model.toggleAgentMode(keepingSelection: true)
                 case 53: model.endModelSelection()
                 case 123...126: break
                 default: model.endModelSelection(); return false
@@ -190,6 +190,8 @@ struct GrowingEditor: NSViewRepresentable {
             case 125, 126: model.cycleProject(code == 125 ? 1 : -1)
             case 123, 124: model.stepPermission(code == 124 ? 1 : -1)
             case 51, 117: model.requestProjectRemoval()
+            // In the popover a click opened, ↵ just closes it.
+            case 36 where model.selectingAgent && !model.showingAgentPicker: model.toggleAgentMode(keepingSelection: true)
             case 36, 53: model.endModelSelection()
             default: model.endModelSelection(); return false
             }

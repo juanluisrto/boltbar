@@ -185,11 +185,12 @@ import SwiftUI
 
     // MARK: Agent mode
 
-    /// ⌘J and the terminal button. Turning it on selects the chip, so the arrows adjust it at once.
-    func toggleAgentMode() {
+    /// ⌘J and the terminal button. Turning it on selects the chip, so the arrows adjust it at once;
+    /// ↵ on the chip keeps it selected either way, so ↵ again flips it back.
+    func toggleAgentMode(keepingSelection: Bool = false) {
         agentMode.toggle()
         selectingModel = false; showingModelPicker = false; pendingProjectRemoval = nil; pendingFullAccess = nil
-        selectingAgent = agentMode; showingAgentPicker = false
+        selectingAgent = agentMode || keepingSelection; showingAgentPicker = false
         if agentMode { agentSettings.expireFullAccess() }
     }
     /// Tab with an empty message walks to the model chip, then the agent chip, and stays there; ⇧Tab walks back.
