@@ -147,6 +147,16 @@ struct AgentPopover: View {
                 }
             }
             Divider()
+            if let session = model.agentSession {
+                Button { model.copyTerminalCommand(); model.showingAgentPicker = false } label: {
+                    HStack(spacing: 8) {
+                        Text("Continue in terminal")
+                        Spacer(minLength: 8)
+                        Text(session.provider == .anthropic ? "claude --resume" : "codex resume").foregroundStyle(.secondary)
+                        Image(systemName: "doc.on.doc").foregroundStyle(.secondary)
+                    }.font(.system(size: 11, design: .monospaced)).contentShape(Rectangle())
+                }.buttonStyle(.plain).help("Copies \(session.terminalCommand)")
+            }
             Button { model.toggleAgentMode() } label: {
                 HStack { Text("Turn off agent mode"); Spacer(); Text(settings.shortcut.label).foregroundStyle(.secondary) }
                     .font(.system(size: 11, design: .monospaced)).contentShape(Rectangle())
@@ -304,6 +314,7 @@ struct HelpPane: View {
 enum HelpContent {
     static let commands: [(command: String, summary: String)] = [
         ("/help", "Everything about Boltbar"), ("/new", "Start a new chat"), ("/agent", "Turn agent mode on or off"),
+        ("/terminal", "Copy the command that continues this agent chat in a terminal"),
     ]
     static func markdown(_ agentShortcut: String) -> String {
         """
@@ -338,6 +349,8 @@ enum HelpContent {
 
         It follows the project's own rules: Claude Code reads CLAUDE.md, or AGENTS.md when there is none, and Codex the other way round.
 
+        Each agent chat is a real Claude Code session or Codex thread, so later messages continue it and you can pick it up in a terminal: /terminal, or Continue in terminal in the agent chip, copies the command. Switching project or CLI, or retrying a reply, starts a new session. Deleting a chat in Boltbar leaves the CLI's copy.
+
         When it asks, ⌘↵ allows, ⌥⌘↵ allows the same thing for the rest of the chat, and Esc denies. Stop denies anything still waiting. Web search is off in agent mode.
 
         ## Commands
@@ -346,6 +359,7 @@ enum HelpContent {
         | /help | This help |
         | /new | Start a new chat |
         | /agent | Turn agent mode on or off |
+        | /terminal | Copy the command that continues this agent chat in a terminal |
 
         ## Attachments and web
         Paste, drop or pick images, PDFs and text files; they stay with the message for follow-ups. Hover + for the globe, which lets the model search the web with numbered sources, and your previous chats.

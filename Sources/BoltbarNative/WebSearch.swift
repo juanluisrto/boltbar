@@ -6,6 +6,8 @@ enum StreamUpdate {
     case activity(String)
     /// A tool call in agent mode, sent again as its status changes.
     case step(AgentStep)
+    /// The Claude Code session or Codex thread an agent turn runs in, once the CLI has taken it up.
+    case agentSession(String)
 }
 
 /// A citation never touches the next word, while closing punctuation and

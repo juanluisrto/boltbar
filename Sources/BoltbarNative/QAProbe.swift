@@ -27,7 +27,7 @@ enum QAProbe {
                                 count += 1; text += delta
                             case .replaceText(let value): text = value
                             case .activity(let status): if status == "Searching the web…" { searches += 1 }
-                            case .step: break
+                            case .step, .agentSession: break
                             }
                         }
                     }

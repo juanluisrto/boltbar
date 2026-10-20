@@ -12,10 +12,10 @@ final class AgentTests: XCTestCase {
     }
 
     func testClaudeArgumentsFollowThePermission() {
-        let look = ClaudeAgent.arguments(request(), agent: turn(.look))
+        let look = ClaudeAgent.arguments(request(), agent: turn(.look), session: "s1")
         XCTAssertEqual(look[look.firstIndex(of: "--permission-prompts")! + 1], "none")
         XCTAssertFalse(look.contains("--permission-prompt-tool"))
-        let ask = ClaudeAgent.arguments(request(), agent: turn(.ask))
+        let ask = ClaudeAgent.arguments(request(), agent: turn(.ask), session: "s1")
         XCTAssertEqual(ask[ask.firstIndex(of: "--permission-mode")! + 1], "manual")
         XCTAssertEqual(ask[ask.firstIndex(of: "--permission-prompt-tool")! + 1], "stdio")
         XCTAssertEqual(ask[ask.firstIndex(of: "--disallowedTools")! + 1], "WebSearch,WebFetch")
@@ -24,10 +24,10 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(CodexAgent.policy(.look).approval, "never")
         XCTAssertEqual(CodexAgent.policy(.ask).sandbox, "workspace-write")
         XCTAssertEqual(CodexAgent.policy(.ask).approval, "untrusted")
-        let edit = ClaudeAgent.arguments(request(), agent: turn(.edit))
+        let edit = ClaudeAgent.arguments(request(), agent: turn(.edit), session: "s1")
         XCTAssertEqual(edit[edit.firstIndex(of: "--permission-mode")! + 1], "acceptEdits")
         XCTAssertEqual(edit[edit.firstIndex(of: "--permission-prompt-tool")! + 1], "stdio", "Edit still asks before commands")
-        let full = ClaudeAgent.arguments(request(), agent: turn(.full))
+        let full = ClaudeAgent.arguments(request(), agent: turn(.full), session: "s1")
         XCTAssertEqual(full[full.firstIndex(of: "--permission-mode")! + 1], "bypassPermissions")
         XCTAssertTrue(full.contains("--allow-dangerously-skip-permissions"))
         XCTAssertFalse(full.contains("--permission-prompt-tool"))
@@ -56,7 +56,7 @@ final class AgentTests: XCTestCase {
         XCTAssertTrue(claude.contains("Use tabs.") && claude.contains("Prefer Swift."))
         XCTAssertFalse(claude.contains("Run make test."), "CLAUDE.md wins over AGENTS.md")
         XCTAssertFalse(claude.contains("CLAUDE.local.md"), "Empty files are skipped")
-        let args = ClaudeAgent.arguments(request(), agent: AgentTurn(directory: dir.path, permission: .look) { _ in .deny })
+        let args = ClaudeAgent.arguments(request(), agent: AgentTurn(directory: dir.path, permission: .look) { _ in .deny }, session: "s1")
         XCTAssertTrue(args[args.firstIndex(of: "--append-system-prompt")! + 1].contains("Use tabs."))
 
         try remove("AGENTS.md")
@@ -180,6 +180,88 @@ final class AgentTests: XCTestCase {
         var tries = 0
         while !condition() && tries < 500 { tries += 1; try? await Task.sleep(nanoseconds: 2_000_000) }
         XCTAssertTrue(condition(), "Timed out", file: file, line: line)
+    }
+
+    func testSessionsAreSavedAndContinued() throws {
+        let fresh = ClaudeAgent.arguments(request(), agent: turn(.ask), session: "s1")
+        XCTAssertEqual(fresh[fresh.firstIndex(of: "--session-id")! + 1], "s1")
+        XCTAssertFalse(fresh.contains("--no-session-persistence"), "Sessions are kept so the terminal can resume them")
+        var resumed = turn(.ask); resumed.resume = AgentResume(id: "s1", messages: [Message(role: .user, text: "And now?")])
+        let again = ClaudeAgent.arguments(request(), agent: resumed, session: "s1")
+        XCTAssertEqual(again[again.firstIndex(of: "--resume")! + 1], "s1"); XCTAssertFalse(again.contains("--session-id"))
+
+        let only = try Agent.input(request(), agent: resumed, codex: false)
+        XCTAssertEqual(only.compactMap { $0["text"] as? String }, ["And now?"], "A continued session reads only the new words, unlabelled")
+        let whole = ChatRequest(provider: .anthropic, model: "m", effort: .low, transport: .cli,
+                                messages: [Message(role: .user, text: "Hi"), Message(role: .assistant, text: "Hello"), Message(role: .user, text: "Fix it")])
+        XCTAssertEqual(try Agent.input(whole, agent: turn(.ask), codex: true).compactMap { $0["text"] as? String }, ["user: Hi", "assistant: Hello", "user: Fix it"])
+        XCTAssertEqual(try Agent.input(request(), agent: turn(.ask), codex: false).compactMap { $0["text"] as? String }, ["Fix the build"])
+
+        let session = AgentSession(provider: .anthropic, directory: "/Users/me/Joe's app", id: "abc", seen: UUID())
+        XCTAssertEqual(session.terminalCommand, "cd '/Users/me/Joe'\\''s app' && claude --resume abc")
+        XCTAssertEqual(AgentSession(provider: .openai, directory: "/p", id: "t1", seen: UUID()).terminalCommand, "cd '/p' && codex resume t1")
+
+        let summary = ConversationSummary(id: UUID(), title: "t", createdAt: Date(), updatedAt: Date())
+        let record = Conversation(summary: summary, messages: [], provider: .anthropic, model: "m", effort: .low, transport: .cli, agentSession: session)
+        XCTAssertEqual(try JSONDecoder().decode(Conversation.self, from: JSONEncoder().encode(record)).agentSession, session)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any]); legacy["agentSession"] = nil
+        XCTAssertNil(try JSONDecoder().decode(Conversation.self, from: JSONSerialization.data(withJSONObject: legacy)).agentSession, "Older chats still open")
+    }
+
+    @MainActor func testAChatContinuesItsSessionUntilItsHistoryChanges() async throws {
+        var requests: [ChatRequest] = []
+        let model = model { request, update in
+            requests.append(request)
+            await update(.agentSession(request.agent?.resume?.id ?? "session-\(requests.count)"))
+            await update(.text("Done \(requests.count)."))
+        }
+        model.toggleAgentMode()
+        model.draft = "One"; model.send(); await wait { !model.streaming }
+        XCTAssertNil(requests.last?.agent?.resume, "The first turn starts a session")
+        XCTAssertEqual(model.agentSession?.id, "session-1")
+        XCTAssertEqual(model.agentSession?.seen, model.messages.last?.id)
+
+        model.draft = "Two"; model.send(); await wait { !model.streaming }
+        XCTAssertEqual(requests.last?.agent?.resume?.id, "session-1")
+        XCTAssertEqual(requests.last?.agent?.resume?.messages.map(\.text), ["Two"], "Only what the session hasn't seen")
+
+        model.agentMode = false
+        model.draft = "Plain question"; model.send(); await wait { !model.streaming }
+        model.agentMode = true
+        model.draft = "Three"; model.send(); await wait { !model.streaming }
+        XCTAssertEqual(requests.last?.agent?.resume?.messages.map(\.text), ["Plain question", "Done 3.", "Three"], "Turns outside agent mode are caught up")
+
+        model.retry(); await wait { !model.streaming }
+        XCTAssertNil(requests.last?.agent?.resume, "A retry rewrites history, so a new session starts")
+        XCTAssertEqual(model.agentSession?.id, "session-5")
+
+        let other = FileManager.default.temporaryDirectory.appendingPathComponent("boltbar-other-\(UUID())")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: other) }
+        model.addProject(path: other.path)
+        model.draft = "Elsewhere"; model.send(); await wait { !model.streaming }
+        XCTAssertNil(requests.last?.agent?.resume, "Another project starts its own session")
+        XCTAssertEqual(model.agentSession?.directory, other.standardizedFileURL.path)
+
+        model.copyTerminalCommand()
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), model.agentSession?.terminalCommand)
+        model.reset()
+        XCTAssertNil(model.agentSession, "A new chat has no session")
+    }
+
+    @MainActor func testAStoppedReplyIsMentionedWhenTheSessionContinues() async {
+        var requests: [ChatRequest] = []
+        let model = model { request, update in
+            requests.append(request)
+            await update(.agentSession("s"))
+            if requests.count == 1 { await update(.text("Halfway")); try? await Task.sleep(nanoseconds: 5_000_000_000) }
+        }
+        model.toggleAgentMode()
+        model.draft = "Long job"; model.send()
+        await wait { model.messages.last?.text == "Halfway" }
+        model.stop()
+        model.draft = "Never mind"; model.send(); await wait { requests.count == 2 }
+        XCTAssertEqual(requests.last?.agent?.resume?.messages.map(\.text), ["[Your previous reply was interrupted by the user.]", "Never mind"])
     }
 
     @MainActor func testApprovalsWaitForTheUserAndAllowInThisChatSticks() async {

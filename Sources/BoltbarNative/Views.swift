@@ -245,6 +245,10 @@ struct ChatBar: View {
                     if !model.messages.isEmpty { Button("Retry") { model.retry() }.font(.system(size: 12, design: .monospaced)).buttonStyle(.borderless) }
                     Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
                 }
+            } else if let notice = model.notice {
+                Text(notice).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(8).background(theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    .accessibilityAddTraits(.updatesFrequently)
             }
             // The two chips that say how it will answer come first; + unrolls the rest.
             HStack(spacing: 9) {

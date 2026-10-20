@@ -16,6 +16,8 @@ struct Conversation: Codable {
     let transport: Transport
     /// Messages still waiting to be sent; reopened chats show them paused.
     var queued: [Message]? = nil
+    /// The CLI session an agent chat continues, also resumable from the terminal.
+    var agentSession: AgentSession? = nil
 
     static func title(for messages: [Message]) -> String {
         guard let first = messages.first(where: { $0.role == .user }) else { return "New conversation" }

@@ -95,14 +95,36 @@ enum ApprovalDecision { case allow, allowForChat, deny }
 struct AgentTurn {
     let directory: String
     let permission: AgentPermission
+    /// The session to continue; nil starts a new one with the whole chat.
+    var resume: AgentResume? = nil
     let approve: @MainActor @Sendable (ApprovalRequest) async -> ApprovalDecision
+}
+
+/// The Claude Code session or Codex thread behind an agent chat. It is saved with the chat, so later
+/// turns continue it and the terminal can pick it up.
+struct AgentSession: Codable, Equatable {
+    let provider: Provider
+    let directory: String
+    let id: String
+    /// The last message the session has taken in; the ones after it are the next input.
+    var seen: UUID
+    var terminalCommand: String {
+        let folder = "'" + directory.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return "cd \(folder) && " + (provider == .anthropic ? "claude --resume \(id)" : "codex resume \(id)")
+    }
+}
+
+/// A session to continue, with only the messages it hasn't seen.
+struct AgentResume {
+    let id: String
+    let messages: [Message]
 }
 
 enum Agent {
     static func instructions(_ directory: String, for provider: Provider) -> String {
         let base = "You are running inside Boltbar, a small chat bar on the user's Mac. You are working in \(directory). " +
             "Act on the user's request with your tools, keep your replies short, and say what you changed. " +
-            "The input contains the conversation so far, with role labels; answer the latest user message."
+            "When the input carries role labels, it is the conversation so far; answer the latest user message."
         return projectRules(directory, for: provider).map { base + "\n\n" + $0 } ?? base
     }
     /// The project's own rules. Claude Code runs in safe mode, which skips CLAUDE.md, so Boltbar passes it on,
@@ -131,8 +153,24 @@ enum Agent {
         guard FileManager.default.fileExists(atPath: agent.directory) else {
             throw AppError("The project folder \(agent.directory) is missing. Choose another one in the agent chip.")
         }
-        if request.provider == .anthropic { try await ClaudeAgent.stream(request, agent: agent, update: update) }
-        else { try await CodexAgent.stream(request, agent: agent, update: update) }
+        func run(_ agent: AgentTurn, _ update: @escaping (StreamUpdate) async -> Void) async throws {
+            if request.provider == .anthropic { try await ClaudeAgent.stream(request, agent: agent, update: update) }
+            else { try await CodexAgent.stream(request, agent: agent, update: update) }
+        }
+        let started = Flag()
+        do {
+            try await run(agent) { started.value = true; await update($0) }
+        } catch where agent.resume != nil && !started.value && !Task.isCancelled {
+            // The session is gone (deleted, or saved on another Mac): start a new one with the whole chat.
+            var fresh = agent; fresh.resume = nil
+            try await run(fresh, update)
+        }
+    }
+    /// What the CLI reads this turn: the whole chat for a new session, or what a continued one hasn't seen,
+    /// without role labels when it is only the user's own messages.
+    static func input(_ request: ChatRequest, agent: AgentTurn, codex: Bool) throws -> [[String: Any]] {
+        let messages = agent.resume?.messages ?? request.messages
+        return try CLIInput.blocks(messages, codex: codex, labelled: messages.contains { $0.role == .assistant })
     }
     /// A path shown relative to the project, as people read it.
     static func relative(_ path: String, to directory: String) -> String {
@@ -155,12 +193,13 @@ enum Agent {
 
 /// Claude Code in stream-json mode, with permission prompts answered by Boltbar.
 enum ClaudeAgent {
-    static func arguments(_ request: ChatRequest, agent: AgentTurn) -> [String] {
+    static func arguments(_ request: ChatRequest, agent: AgentTurn, session: String) -> [String] {
         var args = ["-p", "--verbose", "--include-partial-messages", "--input-format", "stream-json", "--output-format", "stream-json",
                     "--model", request.model, "--effort", request.effort.rawValue,
                     // Web content plus tools is how data leaves a machine; keep it out of agent mode for now.
                     "--disallowedTools", "WebSearch,WebFetch",
-                    "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--safe-mode", "--no-session-persistence",
+                    "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--safe-mode",
+                    agent.resume == nil ? "--session-id" : "--resume", session,
                     "--append-system-prompt", Agent.instructions(agent.directory, for: .anthropic)]
         switch agent.permission {
         case .look: args += ["--permission-mode", "manual", "--permission-prompts", "none"]
@@ -172,8 +211,9 @@ enum ClaudeAgent {
     }
 
     static func stream(_ request: ChatRequest, agent: AgentTurn, update: @escaping (StreamUpdate) async -> Void) async throws {
-        let content = try CLIInput.blocks(request, codex: false)
-        let child = try LineProcess(program: CLI.program(.anthropic), args: arguments(request, agent: agent), keepInputOpen: true,
+        let content = try Agent.input(request, agent: agent, codex: false)
+        let session = agent.resume?.id ?? UUID().uuidString.lowercased()
+        let child = try LineProcess(program: CLI.program(.anthropic), args: arguments(request, agent: agent, session: session), keepInputOpen: true,
                                     directory: agent.directory)
         defer { child.cancel() }
         try await withTaskCancellationHandler {
@@ -186,6 +226,9 @@ enum ClaudeAgent {
                     let response = await parser.answer(event["request"] as? [String: Any] ?? [:], approve: agent.approve)
                     try await child.send(["type": "control_response", "response": ["subtype": "success", "request_id": id, "response": response]])
                     continue
+                }
+                if event["type"] as? String == "system", event["subtype"] as? String == "init" {
+                    await update(.agentSession(event["session_id"] as? String ?? session))
                 }
                 for item in try parser.consume(event) { await update(item) }
                 if parser.completed { return }
@@ -285,7 +328,7 @@ enum CodexAgent {
     }
 
     static func stream(_ request: ChatRequest, agent: AgentTurn, update: @escaping (StreamUpdate) async -> Void) async throws {
-        let input = try CLIInput.blocks(request, codex: true)
+        let input = try Agent.input(request, agent: agent, codex: true)
         let child = try LineProcess(program: CLI.program(.openai), args: arguments, keepInputOpen: true, directory: agent.directory)
         defer { child.cancel() }
         try await withTaskCancellationHandler {
@@ -303,13 +346,15 @@ enum CodexAgent {
                 switch event["id"] as? Int {
                 case 1:
                     try await child.send(["method": "initialized", "params": [:]])
-                    try await child.send(["id": 2, "method": "thread/start", "params": [
-                        "model": request.model, "cwd": agent.directory, "ephemeral": true, "approvalPolicy": approval, "sandbox": sandbox,
-                        "developerInstructions": Agent.instructions(agent.directory, for: .openai)]])
+                    var params: [String: Any] = ["model": request.model, "cwd": agent.directory, "approvalPolicy": approval, "sandbox": sandbox,
+                                                 "developerInstructions": Agent.instructions(agent.directory, for: .openai)]
+                    if let resume = agent.resume { params["threadId"] = resume.id; params["excludeTurns"] = true } else { params["ephemeral"] = false }
+                    try await child.send(["id": 2, "method": agent.resume == nil ? "thread/start" : "thread/resume", "params": params])
                 case 2:
                     guard let result = event["result"] as? [String: Any], let thread = result["thread"] as? [String: Any], let id = thread["id"] as? String else {
                         throw AppError("Codex CLI returned an invalid thread. Update Codex and retry.")
                     }
+                    await update(.agentSession(id))
                     try await child.send(["id": 3, "method": "turn/start", "params": ["threadId": id, "input": input, "effort": request.effort.rawValue]])
                 default: break
                 }
@@ -400,3 +445,6 @@ struct CodexAgentStream {
         }
     }
 }
+
+/// Set from the stream callback, read once it returns.
+private final class Flag: @unchecked Sendable { var value = false }

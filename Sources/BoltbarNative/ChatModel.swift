@@ -57,6 +57,11 @@ import SwiftUI
     /// Full access waits for a second → (or click) on this project.
     @Published private(set) var pendingFullAccess: UUID?
     @Published private(set) var pendingApproval: ApprovalRequest?
+    /// This chat's Claude Code session or Codex thread; agent turns continue it.
+    @Published private(set) var agentSession: AgentSession? { didSet { if agentSession != oldValue { conversationDirty = true } } }
+    /// A short confirmation above the toolbar, cleared after a few seconds.
+    @Published var notice: String?
+    private var noticeTask: Task<Void, Never>?
     @Published var showingHelp = false
     @Published var error: String?
     @Published var refreshing = false
@@ -268,16 +273,33 @@ import SwiftUI
 
     // MARK: Help and commands
 
-    static let commands = ["/help", "/new", "/agent"]
+    static let commands = ["/help", "/new", "/agent", "/terminal"]
     /// Commands run locally and are never sent to a model.
     private func runCommand(_ text: String) -> Bool {
         switch text.lowercased() {
         case "/help": showHelp()
         case "/new": newConversation?()
         case "/agent": toggleAgentMode()
+        case "/terminal": copyTerminalCommand()
         default: return false
         }
         return true
+    }
+    /// Copies the command that continues this chat's agent session in a terminal.
+    func copyTerminalCommand() {
+        guard let session = agentSession else {
+            show(notice: "No agent session yet: send a message in agent mode first."); return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(session.terminalCommand, forType: .string)
+        show(notice: "Copied: \(session.terminalCommand)")
+    }
+    func show(notice text: String) {
+        notice = text; noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if !Task.isCancelled { self?.notice = nil }
+        }
     }
     func showHelp() { endModelSelection(); closeHistory(); showingHelp = true }
     func closeHelp() { showingHelp = false }
@@ -358,7 +380,7 @@ import SwiftUI
         selectingModel = false; showingModelPicker = false; selectingAgent = false; showingAgentPicker = false; showingHelp = false
         pendingProjectRemoval = nil; pendingFullAccess = nil
         stop() // Saves any pending messages, held, with the conversation.
-        approvedKeys = []
+        approvedKeys = []; agentSession = nil; notice = nil
         generation = UUID(); task?.cancel(); task = nil
         draft = ""; attachments = []; messages = []; streaming = false; error = nil; unreadReply = false
         queue = []; queueHeld = false; editingQueuedID = nil; lastQueued = -.infinity
@@ -384,7 +406,7 @@ import SwiftUI
         var savedMessages = messages
         for index in savedMessages.indices { savedMessages[index].pending = false }
         let record = Conversation(summary: summary, messages: savedMessages, provider: provider, model: model, effort: preferences.effort,
-            transport: preferences.transport(provider), queued: queue.isEmpty ? nil : queue)
+            transport: preferences.transport(provider), queued: queue.isEmpty ? nil : queue, agentSession: agentSession)
         history.removeAll { $0.id == summary.id }; history.insert(summary, at: 0)
         conversationDirty = false
         historyStore.save(record) { [weak self] error in
@@ -407,7 +429,7 @@ import SwiftUI
                 selectedHistoryID = remaining.isEmpty ? nil : remaining[min(row, remaining.count - 1)].id
             }
             if conversationID == id {
-                messages = []; queue = []; queueHeld = false; editingQueuedID = nil
+                messages = []; queue = []; queueHeld = false; editingQueuedID = nil; agentSession = nil
                 conversationID = UUID(); conversationCreated = Date()
                 conversationDirty = false; lastTurn = nil; canReturnToHistory = false
                 error = nil; threadHeight = 44; manualThreadHeight = nil
@@ -423,6 +445,7 @@ import SwiftUI
             let record = try await historyStore.load(id)
             guard generation == current else { return false }
             messages = record.messages; conversationID = record.summary.id; conversationCreated = record.summary.createdAt
+            agentSession = record.agentSession
             preferences.provider = record.provider; preferences.effort = record.effort
             preferences.models[record.provider.rawValue] = record.model
             preferences.transports[record.provider.rawValue] = record.transport
@@ -517,11 +540,22 @@ import SwiftUI
         if agentMode, let project = agentProject {
             agentSettings.expireFullAccess()
             let permission = agentSettings.projects.first { $0.id == project.id }?.permission ?? project.permission
-            request.agent = AgentTurn(directory: project.path, permission: permission) { [weak self] approval in
+            request.agent = AgentTurn(directory: project.path, permission: permission, resume: resume(in: project.path, context: context)) { [weak self] approval in
                 await self?.askApproval(approval) ?? .deny
             }
         }
         return request
+    }
+    /// The chat's session continues when it belongs to this CLI and folder and Boltbar's copy still holds the last
+    /// message it saw; otherwise (another project, a retry, an edit) a new session gets the whole chat.
+    private func resume(in directory: String, context: [Message]) -> AgentResume? {
+        guard let session = agentSession, session.provider == provider, session.directory == directory,
+              let at = messages.firstIndex(where: { $0.id == session.seen }) else { return nil }
+        let unseen = Set(messages[(at + 1)...].map(\.id))
+        var fresh = context.filter { unseen.contains($0.id) }
+        guard !fresh.isEmpty else { return nil }
+        if messages[at].interrupted == true { fresh.insert(Message(role: .user, text: "[Your previous reply was interrupted by the user.]"), at: 0) }
+        return AgentResume(id: session.id, messages: fresh)
     }
     private func begin(webSearch: Bool) {
         let request = request(webSearch: webSearch)
@@ -544,6 +578,9 @@ import SwiftUI
                         count += 1; self.messages[index].text += text
                     case .replaceText(let text): self.messages[index].text = text
                     case .activity(let activity): self.messages[index].activity = activity
+                    case .agentSession(let id):
+                        // From here on the session holds this exchange, even if it's stopped or fails.
+                        if let agent = request.agent { self.agentSession = AgentSession(provider: request.provider, directory: agent.directory, id: id, seen: assistant.id) }
                     case .step(let step):
                         var steps = self.messages[index].steps ?? []
                         if let at = steps.firstIndex(where: { $0.id == step.id }) { steps[at] = step } else { steps.append(step) }
