@@ -4,6 +4,8 @@ enum StreamUpdate {
     case text(String)
     case replaceText(String)
     case activity(String)
+    /// A tool call in agent mode, sent again as its status changes.
+    case step(AgentStep)
 }
 
 /// A citation never touches the next word, while closing punctuation and

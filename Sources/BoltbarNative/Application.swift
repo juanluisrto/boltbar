@@ -43,6 +43,7 @@ final class ChatPanel: NSPanel {
         model.resize = { [weak self] in self?.fit($0) }
         model.openSettings = { [weak self] in self?.showSettings() }
         model.presentFilePicker = { [weak self] in self?.showAttachmentPicker() }
+        model.presentFolderPicker = { [weak self] in self?.showFolderPicker() }
         model.newConversation = { [weak self] in self?.newChat() }
         model.focusComposer = { [weak self] in self?.focusComposer() }
         model.updateShortcut = { [weak self] key, modifiers, label in
@@ -178,6 +179,26 @@ final class ChatPanel: NSPanel {
             window.contentView = NSHostingView(rootView: ThemedView(model: model) { SettingsView(updater: updater, model: model) }); window.center(); settings = window
         }
         settings?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+    /// Agent mode's project folder, as a sheet on the panel like the attachment picker.
+    private func showFolderPicker() {
+        if let attachmentPicker { attachmentPicker.makeKeyAndOrderFront(nil); return }
+        let picker = NSOpenPanel()
+        picker.title = "Choose a project folder"; picker.prompt = "Use folder"
+        picker.message = "The agent works in this folder."
+        picker.canChooseDirectories = true; picker.canChooseFiles = false; picker.allowsMultipleSelection = false
+        picker.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/Documents")
+        attachmentPicker = picker
+        NSApp.activate(ignoringOtherApps: true)
+        let host = panel.isVisible ? panel! : (settings ?? panel!)
+        picker.beginSheetModal(for: host) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.attachmentPicker = nil
+                if result == .OK, let url = picker.url { self.model.addProject(path: url.path); self.model.agentMode = true }
+                if host === self.panel { self.panel.makeKeyAndOrderFront(nil); self.focusComposer() }
+            }
+        }
     }
     private func showAttachmentPicker() {
         if let attachmentPicker { attachmentPicker.makeKeyAndOrderFront(nil); return }

@@ -75,6 +75,7 @@ struct MessageRow: View {
                 }
             }.frame(height: 22)
             if !message.attachments.isEmpty { AttachmentStrip(items: message.attachments) }
+            if let steps = message.steps, !steps.isEmpty { AgentStepList(steps: steps).padding(.bottom, message.text.isEmpty ? 0 : 5) }
             if !message.text.isEmpty {
                 MarkdownText(source: message.text)
                 if message.role == .assistant {
@@ -195,7 +196,10 @@ struct ChatBar: View {
             if model.showingHistory {
                 HistoryPane(model: model, close: { model.closeHistory() })
             } else {
-            if !model.messages.isEmpty {
+            if model.showingHelp {
+                HelpPane(model: model)
+                Rectangle().fill(theme.border).frame(height: 1)
+            } else if !model.messages.isEmpty {
                 ScrollViewReader { reader in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
@@ -220,6 +224,8 @@ struct ChatBar: View {
                 Rectangle().fill(theme.border).frame(height: 1)
             }
             if !model.queue.isEmpty { QueuePanel(model: model) }
+            if let approval = model.pendingApproval { ApprovalCard(model: model, request: approval) }
+            if let matches = slashMatches { SlashMenu(matches: matches) }
             if !model.attachments.isEmpty {
                 AttachmentStrip(items: model.attachments) { id in model.attachments.removeAll { $0.id == id } }
             }
@@ -240,10 +246,9 @@ struct ChatBar: View {
                     Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
                 }
             }
+            // The two chips that say how it will answer come first; + unrolls the rest.
             HStack(spacing: 9) {
-                Button { model.pickFiles() } label: { Image(systemName: "plus").font(.system(size: 16, weight: .medium, design: .monospaced)).frame(width: 30, height: 30).background(theme.surface, in: Circle()) }
-                    .buttonStyle(.plain).accessibilityLabel("Attach files")
-                Button { model.selectingModel = false; model.showingModelPicker.toggle() } label: {
+                Button { model.selectingModel = false; model.selectingAgent = false; model.showingAgentPicker = false; model.showingModelPicker.toggle() } label: {
                     HStack(spacing: 8) {
                         Text(model.selectedModelReady ? modelTitle(model.model) : "Choose model").lineLimit(1)
                         EffortGauge(effort: model.preferences.effort).frame(width: 18, height: 16).accessibilityHidden(true)
@@ -254,18 +259,8 @@ struct ChatBar: View {
                     .accessibilityValue("\(modelTitle(model.model)), \(model.preferences.effort.title) effort")
                     .help("\(model.preferences.effort.title) effort")
                     .popover(isPresented: $model.showingModelPicker, arrowEdge: .top) { ModelPopover(model: model, close: { model.showingModelPicker = false }) }
-                Button { model.showingModelPicker = false; model.showHistory() } label: {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 14, design: .monospaced)).foregroundStyle(.secondary).frame(width: 30, height: 30)
-                }.buttonStyle(.plain).help("Previous chats (→ when the message is empty)").accessibilityLabel("Previous chats")
-                Button { model.webSearch.toggle() } label: {
-                    Image(systemName: "globe").font(.system(size: 15, design: .monospaced))
-                        .foregroundStyle(model.webSearchActive ? accent : .secondary)
-                        .frame(width: 30, height: 30)
-                        .background(model.webSearchActive ? accent.opacity(0.12) : .clear, in: Circle())
-                }.buttonStyle(.plain).disabled(!model.canSearchWeb || model.streaming)
-                    .accessibilityLabel("Search the web")
-                    .accessibilityValue(model.webSearchActive ? "On" : "Off")
-                    .help(model.canSearchWeb ? (model.webSearch ? "Web access on · searches when needed" : "Allow web search · remembers your choice") : "Web search with Codex requires an OpenAI API key")
+                AgentChip(model: model)
+                ToolRoll(model: model)
                 PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
                 // With text during a reply the main button queues it, so Stop
                 // stays available beside it instead of hiding behind it.
@@ -303,7 +298,16 @@ struct ChatBar: View {
 extension ChatBar {
     private var placeholder: String {
         if model.editingQueuedID != nil { return "Edit queued message…" }
-        return model.streaming || !model.queue.isEmpty ? "Queue a follow-up…" : "Ask anything…"
+        if model.streaming || !model.queue.isEmpty { return "Queue a follow-up…" }
+        if model.agentMode, let project = model.agentProject { return "Tell it what to do in \(model.agentSettings.displayName(project))…" }
+        return "Ask anything…"
+    }
+    /// Typing / lists the local commands; Tab completes the first.
+    private var slashMatches: [(command: String, summary: String)]? {
+        let text = model.draft.lowercased()
+        guard text.hasPrefix("/"), !text.contains(" "), model.attachments.isEmpty else { return nil }
+        let matches = HelpContent.commands.filter { $0.command.hasPrefix(text) && $0.command != text || $0.command == text }
+        return matches.isEmpty ? nil : matches
     }
     /// Return's meaning changes with an empty composer and a queue; say so
     /// where the user is looking instead of relying on the shortcut alone.

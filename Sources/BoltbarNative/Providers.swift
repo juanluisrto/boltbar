@@ -72,6 +72,7 @@ enum Providers {
     }
 
     static func stream(_ request: ChatRequest, update: @escaping (StreamUpdate) async -> Void) async throws {
+        if let agent = request.agent { try await Agent.stream(request, agent: agent, update: update); return }
         if request.webSearch && request.provider == .openai && request.transport == .cli {
             throw AppError("Web search needs OpenAI with an API key. Select OpenAI and API key or Automatic in Settings.")
         }
@@ -184,10 +185,11 @@ final class LineProcess: @unchecked Sendable {
     private var continuation: AsyncThrowingStream<String, Error>.Continuation!
     private(set) var lines: AsyncThrowingStream<String, Error>!
 
-    init(program: String, args: [String], stdin: Data? = nil, keepInputOpen: Bool = false) throws {
+    init(program: String, args: [String], stdin: Data? = nil, keepInputOpen: Bool = false, directory: String? = nil) throws {
         process.executableURL = URL(fileURLWithPath: program); process.arguments = args
         process.standardInput = input; process.standardOutput = output; process.standardError = errors
-        process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        // Chat runs in a scratch folder; agent mode runs in the chosen project.
+        process.currentDirectoryURL = URL(fileURLWithPath: directory ?? NSTemporaryDirectory(), isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:\(NSHomeDirectory())/.local/bin:\(environment["PATH"] ?? "/usr/bin:/bin")"
         process.environment = environment

@@ -93,6 +93,8 @@ struct Message: Identifiable, Codable {
     var activity: String? = nil
     /// Optional so chats saved before this field existed still decode.
     var interrupted: Bool? = nil
+    /// What the agent did during this reply, in order.
+    var steps: [AgentStep]? = nil
 }
 struct ChatRequest {
     let provider: Provider
@@ -101,6 +103,8 @@ struct ChatRequest {
     let transport: Transport
     let messages: [Message]
     var webSearch = false
+    /// Set in agent mode: the CLI acts in a project folder and asks Boltbar before acting.
+    var agent: AgentTurn? = nil
 }
 struct AppError: LocalizedError {
     let message: String

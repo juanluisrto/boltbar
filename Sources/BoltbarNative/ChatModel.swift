@@ -46,11 +46,22 @@ import SwiftUI
     @Published var manualThreadHeight: CGFloat?
     @Published var streaming = false
     @Published var webSearch = false { didSet { defaults.set(webSearch, forKey: "webSearchEnabled") } }
+    /// Agent mode: the CLI acts in the selected project and asks before acting.
+    @Published var agentMode = false { didSet { defaults.set(agentMode, forKey: "agentModeEnabled") } }
+    @Published var agentSettings = AgentSettings() {
+        didSet { if let data = try? JSONEncoder().encode(agentSettings) { defaults.set(data, forKey: "agentSettings") } }
+    }
+    @Published var selectingAgent = false
+    @Published var showingAgentPicker = false
+    @Published private(set) var pendingProjectRemoval: UUID?
+    @Published private(set) var pendingApproval: ApprovalRequest?
+    @Published var showingHelp = false
     @Published var error: String?
     @Published var refreshing = false
     var resize: ((NSSize) -> Void)?
     var openSettings: (() -> Void)?
     var presentFilePicker: (() -> Void)?
+    var presentFolderPicker: (() -> Void)?
     var newConversation: (() -> Void)?
     var focusComposer: (() -> Void)?
     var resizeOrigin: NSPoint?
@@ -72,6 +83,9 @@ import SwiftUI
     private var conversationCreated = Date()
     private var conversationDirty = false
     private var historySearchTask: Task<Void, Never>?
+    private var approvalContinuation: CheckedContinuation<ApprovalDecision, Never>?
+    /// Requests allowed "in this chat"; cleared with the conversation.
+    private var approvedKeys: Set<String> = []
 
     init(defaults: UserDefaults = .standard, historyStore: ConversationStore? = nil, streamer: @escaping Streamer = Providers.stream) {
         self.defaults = defaults
@@ -81,8 +95,12 @@ import SwiftUI
         self.history = historyStore?.summaries ?? []
         self.streamer = streamer
         self.webSearch = defaults.bool(forKey: "webSearchEnabled")
+        self.agentMode = defaults.bool(forKey: "agentModeEnabled")
         preferences = defaults.data(forKey: "preferences").flatMap { try? JSONDecoder().decode(Preferences.self, from: $0) } ?? Preferences()
         preferences.models.removeValue(forKey: "cursor"); preferences.transports.removeValue(forKey: "cursor")
+        if let saved = defaults.data(forKey: "agentSettings").flatMap({ try? JSONDecoder().decode(AgentSettings.self, from: $0) }) { agentSettings = saved }
+        if agentSettings.projects.isEmpty { agentSettings = AgentSettings() }
+        agentSettings.expireFullAccess()
         for provider in Provider.allCases {
             let cached = defaults.stringArray(forKey: "catalog.\(provider.rawValue)")
             let models = (cached ?? provider.defaults).filter(provider.accepts)
@@ -133,7 +151,9 @@ import SwiftUI
     var queuePaused: Bool { queueHeld || editingQueuedID != nil }
     var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty }
     var canSearchWeb: Bool { provider == .anthropic || preferences.transport(provider) != .cli }
-    var webSearchActive: Bool { webSearch && canSearchWeb }
+    /// Web search stays off in agent mode: web content plus tools is how data leaves a machine.
+    var webSearchActive: Bool { webSearch && canSearchWeb && !agentMode }
+    var agentProject: AgentProject? { agentSettings.selectedProject }
     var filteredHistory: [ConversationSummary] {
         guard let historyMatches else { return history }
         let ids = Set(historyMatches)
@@ -156,8 +176,98 @@ import SwiftUI
         preferences.effort = levels[min(levels.count - 1, max(0, current + direction))]
     }
     @discardableResult func endModelSelection() -> Bool {
-        let active = selectingModel || showingModelPicker; selectingModel = false; showingModelPicker = false; return active
+        let active = selectingModel || showingModelPicker || selectingAgent || showingAgentPicker
+        selectingModel = false; showingModelPicker = false; selectingAgent = false; showingAgentPicker = false; pendingProjectRemoval = nil
+        return active
     }
+
+    // MARK: Agent mode
+
+    /// ⌘J and the terminal button. Turning it on selects the chip, so the arrows adjust it at once.
+    func toggleAgentMode() {
+        agentMode.toggle()
+        selectingModel = false; showingModelPicker = false; pendingProjectRemoval = nil
+        selectingAgent = agentMode; showingAgentPicker = false
+        if agentMode { agentSettings.expireFullAccess() }
+    }
+    /// Tab with an empty message moves the selection between the model and agent chips.
+    func switchChipSelection(forward: Bool) -> Bool {
+        guard agentMode, !streaming || selectingAgent else { return false }
+        if selectingAgent { selectingAgent = false; selectingModel = true }
+        else if selectingModel { selectingModel = false; selectingAgent = true }
+        else if forward { selectingAgent = true } else { selectingModel = true }
+        pendingProjectRemoval = nil
+        return true
+    }
+    func cycleProject(_ direction: Int) {
+        let projects = agentSettings.projects
+        guard !projects.isEmpty else { return }
+        let current = projects.firstIndex { $0.id == agentProject?.id } ?? 0
+        agentSettings.selected = projects[(current + direction + projects.count) % projects.count].id
+        pendingProjectRemoval = nil
+    }
+    func selectProject(_ id: UUID) { agentSettings.selected = id; pendingProjectRemoval = nil }
+    /// ← → steps through the permissions on offer, remembered per project.
+    func stepPermission(_ direction: Int) {
+        guard let project = agentProject else { return }
+        let levels = AgentPermission.selectable
+        let current = levels.firstIndex(of: project.permission) ?? levels.firstIndex(of: .ask) ?? 0
+        setPermission(levels[min(levels.count - 1, max(0, current + direction))], for: project.id)
+    }
+    func setPermission(_ permission: AgentPermission, for id: UUID) {
+        guard let index = agentSettings.projects.firstIndex(where: { $0.id == id }) else { return }
+        agentSettings.projects[index].permission = permission
+        agentSettings.projects[index].fullSince = permission == .full ? Date() : nil
+        pendingProjectRemoval = nil
+    }
+    /// Adds a folder (or selects it if already listed) and makes it the agent's project.
+    func addProject(path: String) {
+        let path = URL(fileURLWithPath: path).standardizedFileURL.path
+        if let existing = agentSettings.projects.first(where: { $0.path == path }) { agentSettings.selected = existing.id; return }
+        let project = AgentProject(path: path)
+        agentSettings.projects.append(project); agentSettings.selected = project.id
+    }
+    /// ⌫ asks first; the second press removes the project from the list. The folder is untouched.
+    func requestProjectRemoval() {
+        guard let project = agentProject else { return }
+        if pendingProjectRemoval == project.id { removeProject(project.id) } else { pendingProjectRemoval = project.id }
+    }
+    func removeProject(_ id: UUID) {
+        guard agentSettings.projects.count > 1, let index = agentSettings.projects.firstIndex(where: { $0.id == id }) else { pendingProjectRemoval = nil; return }
+        agentSettings.projects.remove(at: index)
+        if agentSettings.selected == id { agentSettings.selected = agentSettings.projects[min(index, agentSettings.projects.count - 1)].id }
+        pendingProjectRemoval = nil
+    }
+    func chooseProjectFolder() { presentFolderPicker?() }
+    /// Waits for the user's answer; a request already allowed in this chat goes through.
+    func askApproval(_ request: ApprovalRequest) async -> ApprovalDecision {
+        if approvedKeys.contains(request.key) { return .allow }
+        approvalContinuation?.resume(returning: .deny)
+        pendingApproval = request
+        return await withCheckedContinuation { approvalContinuation = $0 }
+    }
+    func resolveApproval(_ decision: ApprovalDecision) {
+        guard let request = pendingApproval, let continuation = approvalContinuation else { return }
+        if decision == .allowForChat { approvedKeys.insert(request.key) }
+        pendingApproval = nil; approvalContinuation = nil
+        continuation.resume(returning: decision)
+    }
+
+    // MARK: Help and commands
+
+    static let commands = ["/help", "/new", "/agent"]
+    /// Commands run locally and are never sent to a model.
+    private func runCommand(_ text: String) -> Bool {
+        switch text.lowercased() {
+        case "/help": showHelp()
+        case "/new": newConversation?()
+        case "/agent": toggleAgentMode()
+        default: return false
+        }
+        return true
+    }
+    func showHelp() { endModelSelection(); closeHistory(); showingHelp = true }
+    func closeHelp() { showingHelp = false }
     func showHistory(preservingSearch: Bool = false) {
         selectingModel = false; showingModelPicker = false
         saveConversation()
@@ -232,8 +342,9 @@ import SwiftUI
     func barHidden() { barVisible = false }
     func reset() {
         applyStartingModel()
-        selectingModel = false; showingModelPicker = false
+        selectingModel = false; showingModelPicker = false; selectingAgent = false; showingAgentPicker = false; showingHelp = false
         stop() // Saves any pending messages, held, with the conversation.
+        approvedKeys = []
         generation = UUID(); task?.cancel(); task = nil
         draft = ""; attachments = []; messages = []; streaming = false; error = nil; unreadReply = false
         queue = []; queueHeld = false; editingQueuedID = nil; lastQueued = -.infinity
@@ -244,6 +355,8 @@ import SwiftUI
         conversationID = UUID(); conversationCreated = Date(); conversationDirty = false
     }
     func stop() {
+        // A stopped turn answers its open permission request with a refusal.
+        resolveApproval(.deny)
         generation = UUID(); task?.cancel(); task = nil; streaming = false
         for index in messages.indices where messages[index].pending {
             messages[index].pending = false; messages[index].interrupted = true
@@ -300,7 +413,7 @@ import SwiftUI
             preferences.models[record.provider.rawValue] = record.model
             preferences.transports[record.provider.rawValue] = record.transport
             queue = record.queued ?? []; queueHeld = !queue.isEmpty; editingQueuedID = nil
-            draft = ""; attachments = []; error = nil; lastTurn = nil
+            draft = ""; attachments = []; error = nil; lastTurn = nil; approvedKeys = []
             inputHeight = 26; manualInputHeight = 26; manualThreadHeight = nil; threadHeight = 44
             conversationDirty = false
             selectedHistoryID = id; canReturnToHistory = true
@@ -314,6 +427,9 @@ import SwiftUI
     /// the reply, except just after queueing so a quick double press can't.
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if attachments.isEmpty, Self.commands.contains(text.lowercased()), runCommand(text) {
+            draft = ""; inputHeight = 26; manualInputHeight = 26; return
+        }
         guard !text.isEmpty || !attachments.isEmpty else {
             if streaming && clock() - lastQueued < Self.interruptDelay { return }
             sendQueueNow(); return
@@ -382,8 +498,16 @@ import SwiftUI
             guard message.interrupted == true else { return message }
             var partial = message; partial.text += "\n\n[Interrupted by the user]"; return partial
         }
-        return ChatRequest(provider: provider, model: model, effort: preferences.effort,
-            transport: preferences.transport(provider), messages: context, webSearch: webSearch)
+        var request = ChatRequest(provider: provider, model: model, effort: preferences.effort,
+            transport: preferences.transport(provider), messages: context, webSearch: webSearch && !agentMode)
+        if agentMode, let project = agentProject {
+            agentSettings.expireFullAccess()
+            let permission = agentSettings.projects.first { $0.id == project.id }?.permission ?? project.permission
+            request.agent = AgentTurn(directory: project.path, permission: permission) { [weak self] approval in
+                await self?.askApproval(approval) ?? .deny
+            }
+        }
+        return request
     }
     private func begin(webSearch: Bool) {
         let request = request(webSearch: webSearch)
@@ -406,6 +530,10 @@ import SwiftUI
                         count += 1; self.messages[index].text += text
                     case .replaceText(let text): self.messages[index].text = text
                     case .activity(let activity): self.messages[index].activity = activity
+                    case .step(let step):
+                        var steps = self.messages[index].steps ?? []
+                        if let at = steps.firstIndex(where: { $0.id == step.id }) { steps[at] = step } else { steps.append(step) }
+                        self.messages[index].steps = steps
                     }
                 }
                 metric(["kind": "stream", "provider": request.provider.rawValue, "model": request.model,
@@ -440,7 +568,13 @@ import SwiftUI
     }
     func receive(_ pasteboard: NSPasteboard) -> Bool {
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-            addURLs(urls); return true
+            // A dropped folder becomes the agent's project; files are attachments.
+            let folders = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            for folder in folders { addProject(path: folder.path) }
+            if !folders.isEmpty { agentMode = true; selectingAgent = true }
+            let files = urls.filter { !folders.contains($0) }
+            if !files.isEmpty { addURLs(files) }
+            return true
         }
         if pasteboard.availableType(from: [.png, .tiff]) != nil,
            let image = NSImage(pasteboard: pasteboard), let tiff = image.tiffRepresentation,

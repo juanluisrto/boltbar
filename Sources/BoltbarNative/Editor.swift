@@ -31,6 +31,15 @@ final class ComposerTextView: NSTextView {
     var onStepEffort: ((Int) -> Bool)?
     var onEndModelSelection: (() -> Bool)?
     var onCancelEdit: (() -> Bool)?
+    /// Agent mode, help and approvals. Each returns whether it used the key.
+    var onApprove: ((Bool) -> Bool)?
+    var onDismissOverlay: (() -> Bool)?
+    var onToggleAgent: (() -> Void)?
+    var agentShortcut: () -> AgentShortcut = { AgentShortcut() }
+    var onHelp: (() -> Void)?
+    var onAgentKey: ((UInt16) -> Bool)?
+    var onTab: ((Bool) -> Bool)?
+    var onCompleteCommand: (() -> Bool)?
     override func mouseDown(with event: NSEvent) {
         _ = onEndModelSelection?(); super.mouseDown(with: event)
     }
@@ -46,10 +55,20 @@ final class ComposerTextView: NSTextView {
     }
     override func keyDown(with event: NSEvent) {
         if hasMarkedText() { super.keyDown(with: event); return }
-        if event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty, onPickerKey?(event.keyCode) == true { return }
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        // ⌘↵ allows and ⌥⌘↵ allows in this chat: never a bare Return, which is too easy to press twice.
+        if event.keyCode == 36, flags.contains(.command), !event.isARepeat, onApprove?(flags.contains(.option)) == true { return }
+        if flags.contains(.command), !flags.contains(.control), matches(agentShortcut(), event) { onToggleAgent?(); return }
+        if flags == [.command, .shift], ["/", "?"].contains(event.charactersIgnoringModifiers) { onHelp?(); return }
+        if flags.isEmpty, onPickerKey?(event.keyCode) == true { return }
+        if flags.isEmpty, onAgentKey?(event.keyCode) == true { return }
         if event.keyCode == 53 {
-            if onEndModelSelection?() != true && onCancelEdit?() != true { window?.orderOut(nil) }
+            if onDismissOverlay?() != true && onEndModelSelection?() != true && onCancelEdit?() != true { window?.orderOut(nil) }
             return
+        }
+        if event.keyCode == 48, flags.isEmpty || flags == .shift {
+            if string.hasPrefix("/"), onCompleteCommand?() == true { return }
+            if string.isEmpty, onTab?(flags != .shift) == true { return }
         }
         if string.isEmpty, !hasMarkedText(),
            event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
@@ -80,6 +99,11 @@ final class ComposerTextView: NSTextView {
         }
         if event.characters?.contains(where: { !$0.isNewline && !$0.isWhitespace }) == true || event.keyCode == 49 { _ = onEndModelSelection?() }
         super.keyDown(with: event)
+    }
+    private func matches(_ shortcut: AgentShortcut, _ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+        return flags.contains(.shift) == shortcut.shift && flags.contains(.option) == shortcut.option
+            && event.charactersIgnoringModifiers?.lowercased() == shortcut.key.lowercased()
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         sender.draggingPasteboard.availableType(from: [.fileURL, .png, .tiff]) == nil ? super.draggingEntered(sender) : .copy
@@ -130,6 +154,36 @@ struct GrowingEditor: NSViewRepresentable {
         }
         text.onEndModelSelection = { model.endModelSelection() }
         text.onCancelEdit = { model.cancelQueuedEdit() }
+        text.onApprove = { forChat in
+            guard model.pendingApproval != nil else { return false }
+            model.resolveApproval(forChat ? .allowForChat : .allow); return true
+        }
+        text.onDismissOverlay = {
+            if model.pendingApproval != nil { model.resolveApproval(.deny); return true }
+            if model.showingHelp { model.closeHelp(); return true }
+            return false
+        }
+        text.onToggleAgent = { model.toggleAgentMode() }
+        text.agentShortcut = { model.agentSettings.shortcut }
+        text.onHelp = { model.showHelp() }
+        text.onTab = { forward in model.switchChipSelection(forward: forward) }
+        text.onCompleteCommand = {
+            let typed = model.draft.lowercased()
+            guard let match = HelpContent.commands.first(where: { $0.command.hasPrefix(typed) }) else { return false }
+            model.draft = match.command; return true
+        }
+        // On the agent chip: ↑ ↓ project, ← → permission, ⌫ twice removes, ↵ done.
+        text.onAgentKey = { code in
+            guard model.selectingAgent || model.showingAgentPicker else { return false }
+            switch code {
+            case 125, 126: model.cycleProject(code == 125 ? 1 : -1)
+            case 123, 124: model.stepPermission(code == 124 ? 1 : -1)
+            case 51, 117: model.requestProjectRemoval()
+            case 36, 53: model.endModelSelection()
+            default: model.endModelSelection(); return false
+            }
+            return true
+        }
         text.onSend = { model.send() }; text.onAttachment = { model.receive($0) }
         text.onNewChat = { model.newConversation?() }; text.onSettings = { model.openSettings?() }
         text.onHistory = { model.showHistory(preservingSearch: model.canReturnToHistory) }
