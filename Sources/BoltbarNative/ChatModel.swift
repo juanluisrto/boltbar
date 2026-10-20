@@ -192,12 +192,13 @@ import SwiftUI
         selectingAgent = agentMode; showingAgentPicker = false
         if agentMode { agentSettings.expireFullAccess() }
     }
-    /// Tab with an empty message moves the selection between the model and agent chips.
+    /// Tab with an empty message walks to the model chip, then the agent chip, and stays there; ⇧Tab walks back.
     func switchChipSelection(forward: Bool) -> Bool {
-        guard agentMode, !streaming || selectingAgent else { return false }
-        if selectingAgent { selectingAgent = false; selectingModel = true }
-        else if selectingModel { selectingModel = false; selectingAgent = true }
-        else if forward { selectingAgent = true } else { selectingModel = true }
+        guard !showingHistory else { return false }
+        let onChip = selectingModel || showingModelPicker || selectingAgent || showingAgentPicker
+        let toAgent = forward && onChip
+        showingModelPicker = false; showingAgentPicker = false
+        selectingModel = !toAgent; selectingAgent = toAgent
         pendingProjectRemoval = nil; pendingFullAccess = nil
         return true
     }

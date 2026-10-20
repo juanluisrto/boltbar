@@ -175,6 +175,25 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(model.messages.last?.text, "Built.")
     }
 
+    @MainActor func testTabWalksFromTheModelChipToTheAgentChipAndBack() {
+        let model = ChatModel(defaults: UserDefaults(suiteName: "com.boltbar.tests.agent.tab.\(UUID())")!)
+        model.agentMode = false
+        XCTAssertTrue(model.switchChipSelection(forward: true))
+        XCTAssertTrue(model.selectingModel); XCTAssertFalse(model.selectingAgent)
+        XCTAssertTrue(model.switchChipSelection(forward: true))
+        XCTAssertTrue(model.selectingAgent, "The agent chip is reachable with agent mode off")
+        XCTAssertFalse(model.selectingModel); XCTAssertFalse(model.agentMode, "Moving never turns agent mode on")
+        XCTAssertTrue(model.switchChipSelection(forward: true))
+        XCTAssertTrue(model.selectingAgent, "Tab stays on the agent chip")
+        XCTAssertTrue(model.switchChipSelection(forward: false))
+        XCTAssertTrue(model.selectingModel); XCTAssertFalse(model.selectingAgent)
+        XCTAssertTrue(model.switchChipSelection(forward: false))
+        XCTAssertTrue(model.selectingModel, "⇧Tab stays on the model chip")
+        model.showingAgentPicker = true; model.selectingModel = false
+        XCTAssertTrue(model.switchChipSelection(forward: true))
+        XCTAssertTrue(model.selectingAgent); XCTAssertFalse(model.showingAgentPicker, "Tab from an open popover keeps the agent chip and closes it")
+    }
+
     @MainActor func testStoppingAnswersAnOpenRequestWithNo() async {
         var decision: ApprovalDecision?
         let model = model { request, _ in

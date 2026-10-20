@@ -143,6 +143,7 @@ struct GrowingEditor: NSViewRepresentable {
             case 125, 126: model.cycleModel(code == 125 ? 1 : -1)
             case 123, 124: model.stepEffort(code == 124 ? 1 : -1)
             case 36, 53: model.endModelSelection()
+            case 48: return false // Tab walks on to the agent chip.
             default: model.endModelSelection(); return false
             }
             return true
@@ -172,9 +173,19 @@ struct GrowingEditor: NSViewRepresentable {
             guard let match = HelpContent.commands.first(where: { $0.command.hasPrefix(typed) }) else { return false }
             model.draft = match.command; return true
         }
-        // On the agent chip: ↑ ↓ project, ← → permission, ⌫ twice removes, ↵ done.
+        // On the agent chip: ↑ ↓ project, ← → permission, ⌫ twice removes, ↵ done. Off, ↵ turns it on.
         text.onAgentKey = { code in
             guard model.selectingAgent || model.showingAgentPicker else { return false }
+            if code == 48 { return false } // Tab stays here; ⇧Tab goes back.
+            if !model.agentMode {
+                switch code {
+                case 36: model.toggleAgentMode()
+                case 53: model.endModelSelection()
+                case 123...126: break
+                default: model.endModelSelection(); return false
+                }
+                return true
+            }
             switch code {
             case 125, 126: model.cycleProject(code == 125 ? 1 : -1)
             case 123, 124: model.stepPermission(code == 124 ? 1 : -1)

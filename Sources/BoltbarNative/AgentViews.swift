@@ -60,9 +60,16 @@ struct AgentChip: View {
             .overlay(Capsule().stroke(model.selectingAgent ? theme.accent : .clear, lineWidth: 1.5))
             .layoutPriority(1) // Its hints win over the empty drag area beside it.
         } else {
+            // Reached with Tab it says how to turn on; the arrows do nothing here.
             Button { model.toggleAgentMode() } label: {
-                Image(systemName: "apple.terminal").font(.system(size: 14)).foregroundStyle(.secondary)
-                    .frame(width: 30, height: 30).background(theme.surface, in: Circle())
+                HStack(spacing: 7) {
+                    Image(systemName: "apple.terminal").font(.system(size: 14))
+                    if model.selectingAgent { Text("↵ turn on").font(.system(size: 12, weight: .medium, design: .monospaced)).fixedSize() }
+                }
+                .foregroundStyle(model.selectingAgent ? theme.accent : .secondary)
+                .padding(.horizontal, model.selectingAgent ? 11 : 0).frame(minWidth: 30).frame(height: 30)
+                .background(theme.surface, in: Capsule())
+                .overlay(Capsule().stroke(model.selectingAgent ? theme.accent : .clear, lineWidth: 1.5))
             }.buttonStyle(.plain).accessibilityLabel("Agent mode").accessibilityValue("Off")
                 .help("Agent mode: let the model act in a folder (\(shortcut))")
         }
@@ -164,7 +171,8 @@ struct ToolRoll: View {
     var body: some View {
         HStack(spacing: 6) {
             Button { model.pickFiles() } label: {
-                Image(systemName: "plus").font(.system(size: 16, weight: .medium)).frame(width: 30, height: 30).background(theme.surface, in: Circle())
+                Image(systemName: "plus").font(.system(size: 16, weight: .medium)).rotationEffect(.degrees(open ? 90 : 0))
+                    .frame(width: 30, height: 30).background(theme.surface, in: Circle())
             }.buttonStyle(.plain).accessibilityLabel("Attach files").help("Attach images, PDFs or text files")
             if open || model.webSearchActive { globe.transition(.opacity.combined(with: .move(edge: .leading))) }
             if open { history.transition(.opacity.combined(with: .move(edge: .leading))) }
@@ -326,7 +334,7 @@ enum HelpContent {
         - Amber, Edit: changes files in the project without asking, deletes included, and asks before other commands or changes outside it.
         - Red, Full: runs any command and changes any file without asking. It takes a second → or click, and returns to Ask after 24 hours unless you turn that off in Settings.
 
-        Each project remembers its permission. Tab with an empty message moves between the model and agent chips. On the agent chip, ↑ ↓ change project, ← → change permission, ⌫ twice removes a project from the list (the folder is untouched); click it for the full list. Drop a folder on the bar to add it; the first project is your Documents folder.
+        Each project remembers its permission. With an empty message, Tab outlines the model chip, Tab again the agent chip, and ⇧Tab goes back; with agent mode off, ↵ on its chip turns it on. Click the terminal icon to turn it off. On the agent chip, ↑ ↓ change project, ← → change permission, ⌫ twice removes a project from the list (the folder is untouched); click it for the full list. Drop a folder on the bar to add it; the first project is your Documents folder.
 
         When it asks, ⌘↵ allows, ⌥⌘↵ allows the same thing for the rest of the chat, and Esc denies. Stop denies anything still waiting. Web search is off in agent mode.
 
