@@ -7,19 +7,22 @@ A compact AI chat bar built in Swift, SwiftUI and AppKit. Starting with v0.2.0, 
 - **⌥ Space** opens a new conversation; **Esc** hides it. While a reply is streaming, messages are queued, or a reply finished while the bar was hidden, **⌥ Space** instead brings that conversation back where you left it, and the reply and queue carry on. **⌘N** always starts fresh, stopping any reply in progress (kept as Interrupted, with its queue saved paused), and **⌘,** opens a separate Settings window.
 - A one-line editor grows upward to eight lines, then scrolls. Drag any border to resize one dimension, or a corner to resize both. Drag the blank top strip or toolbar background to move the bar.
 - Paste, drop or choose images, PDFs and text documents. Sent attachments stay visible in the conversation and remain available in follow-up requests.
+- **Agent mode** (⌘J, configurable in Settings, or the terminal chip beside the model chip) hands the request to the Claude Code or Codex CLI, working in a project folder. The chip shows the project and a permission light: Look (gray) only reads, Ask (green) asks before every command or change, Edit (amber) changes files in the project without asking and asks before other commands, Full (red) never asks. Full takes a second press and returns to Ask after 24 hours unless that is turned off in Settings; each project remembers its level. Click the project name or light for the project list, click the terminal icon to turn agent mode off, or reach the chip with Tab and use ↑/↓ for the project, ←/→ for the permission and Return to toggle. Drop a folder on the bar to add it.
+- Agent actions show as one line each above the reply. Permission requests appear above the composer: **⌘Return** allows, **⌥⌘Return** allows the same request for the rest of the chat, **Esc** denies, and Stop denies anything still waiting. The agent follows the project's `CLAUDE.md` or `AGENTS.md` (Claude Code falls back to `AGENTS.md`, Codex to `CLAUDE.md`). Each agent chat is a real Claude Code session or Codex thread: `/terminal`, or Continue in terminal in the agent chip, copies the command that resumes it in a terminal. Web search is off in agent mode.
+- `/help` (or **⌘?**) shows every key and command inside the bar; `/new`, `/agent` and `/terminal` work the same way. With an empty composer, **Tab** outlines the model chip, Tab again the agent chip, and **⇧Tab** goes back.
 - A single model chip with an effort gauge, streamed replies, selectable Markdown, aligned tables, and highlighted fenced code. Copy a whole response from its hover/focus icon, or a code block from its own copy icon.
 - Keep writing while a reply streams: **Return** adds the message to a queue shown above the composer, and the queue goes out as one turn when the reply finishes. **Return** in an empty composer, or **Send now**, interrupts the reply and sends the queue at once; a second Return within 0.6 s of queueing, or a held key, never interrupts. Click a queued message to edit it (with its attachments) in the composer, or × to remove it. An interrupted reply keeps its partial text, is marked Interrupted and stays in the context. Stop, a provider error, switching chats (including ⌘N) or quitting pause the queue and save it with the conversation; it resumes only with Return, Send now or Retry.
 - Previous chats open inside the bar from the clock button or **→** in an empty composer. Start typing to filter titles and all message text locally; accents and case do not matter. Use ↑/↓ to select and **→** or Return to open. In a reopened chat, **←** with an empty composer returns to the same filter and selection. Dates show today’s time, Yesterday, or the month/day. Settings stays in the menu and at **⌘,**.
 - Settings → Appearance offers Paper and Mist light themes, Graphite and Midnight dark themes, System/Light/Dark mode, and a custom accent color. Interface controls use monospaced text; rendered chat content retains its reading typography.
 - With an empty composer, ↑/↓ cycles models and outlines the model chip. While outlined, ←/→ changes effort. Typing, clicking the composer, Escape, or Return ends selection. The effort menu also offers direct Low/Medium/High buttons.
 - Delete a history item with its hover trash button or press Delete twice; Escape or navigation cancels keyboard confirmation.
-- The globe allows web search with OpenAI API and Claude API/CLI; the model decides when a search is needed and returns numbered, clickable source citations, with a Sources line listing each domain under the answer. Boltbar remembers that choice across new chats and app restarts. Codex CLI still requires switching to API mode for search. The saved choice is retained when switching providers.
+- The globe (hover **+** to unroll it and the previous-chats button; it stays pinned while on) allows web search with OpenAI API and Claude API/CLI; the model decides when a search is needed and returns numbered, clickable source citations, with a Sources line listing each domain under the answer. Boltbar remembers that choice across new chats and app restarts. Codex CLI still requires switching to API mode for search. The saved choice is retained when switching providers.
 - OpenAI Responses and Anthropic Messages through URLSession; optional existing Codex or Claude Code CLI sessions.
 - API keys use macOS Keychain service `com.boltbar.keys`. Chats and attachments are saved locally in `~/Library/Application Support/Boltbar/Conversations`, with a private metadata index and a separate file per conversation. Keys are never included.
 
 ## Install
 
-Download the universal ZIP or DMG from [v0.5.2](https://github.com/juanluisrto/boltbar/releases/tag/v0.5.2), or run:
+Download the universal ZIP or DMG from [v0.6.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.6.0), or run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -27,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh
 
 The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
 
-**v0.5.2 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
+**v0.6.0 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
 
 The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
 
@@ -53,7 +56,7 @@ The default build uses an ad hoc signature. For local development, supply an exi
 
 From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.5.2`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
+With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.6.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
 ## Credentials and providers
 
