@@ -99,10 +99,33 @@ struct AgentTurn {
 }
 
 enum Agent {
-    static func instructions(_ directory: String) -> String {
-        "You are running inside Boltbar, a small chat bar on the user's Mac. You are working in \(directory). " +
-        "Act on the user's request with your tools, keep your replies short, and say what you changed. " +
-        "The input contains the conversation so far, with role labels; answer the latest user message."
+    static func instructions(_ directory: String, for provider: Provider) -> String {
+        let base = "You are running inside Boltbar, a small chat bar on the user's Mac. You are working in \(directory). " +
+            "Act on the user's request with your tools, keep your replies short, and say what you changed. " +
+            "The input contains the conversation so far, with role labels; answer the latest user message."
+        return projectRules(directory, for: provider).map { base + "\n\n" + $0 } ?? base
+    }
+    /// The project's own rules. Claude Code runs in safe mode, which skips CLAUDE.md, so Boltbar passes it on,
+    /// or AGENTS.md when there is none. Codex reads AGENTS.md itself and gets CLAUDE.md only when there is none.
+    static func projectRules(_ directory: String, for provider: Provider) -> String? {
+        let present = { (names: [String]) in
+            names.filter { name in
+                var folder: ObjCBool = false
+                return FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(name), isDirectory: &folder) && !folder.boolValue
+            }
+        }
+        let claude = present(["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"]), agents = present(["AGENTS.md"])
+        let files = provider == .anthropic ? (claude.isEmpty ? agents : claude) : (agents.isEmpty && present(["AGENTS.override.md"]).isEmpty ? claude : [])
+        var budget = 40_000
+        let parts = files.compactMap { name -> String? in
+            guard budget > 0, let text = try? String(contentsOfFile: (directory as NSString).appendingPathComponent(name), encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            let kept = text.count > budget ? String(text.prefix(budget)) + "\n[…the rest of this file was cut]" : text
+            budget -= kept.count
+            return "<project_instructions file=\"\(name)\">\n\(kept)\n</project_instructions>"
+        }
+        guard !parts.isEmpty else { return nil }
+        return "The project keeps its own instructions for coding agents. Follow them unless the user asks otherwise.\n\n" + parts.joined(separator: "\n\n")
     }
     static func stream(_ request: ChatRequest, agent: AgentTurn, update: @escaping (StreamUpdate) async -> Void) async throws {
         guard FileManager.default.fileExists(atPath: agent.directory) else {
@@ -138,7 +161,7 @@ enum ClaudeAgent {
                     // Web content plus tools is how data leaves a machine; keep it out of agent mode for now.
                     "--disallowedTools", "WebSearch,WebFetch",
                     "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--safe-mode", "--no-session-persistence",
-                    "--append-system-prompt", Agent.instructions(agent.directory)]
+                    "--append-system-prompt", Agent.instructions(agent.directory, for: .anthropic)]
         switch agent.permission {
         case .look: args += ["--permission-mode", "manual", "--permission-prompts", "none"]
         case .ask: args += ["--permission-mode", "manual", "--permission-prompt-tool", "stdio"]
@@ -282,7 +305,7 @@ enum CodexAgent {
                     try await child.send(["method": "initialized", "params": [:]])
                     try await child.send(["id": 2, "method": "thread/start", "params": [
                         "model": request.model, "cwd": agent.directory, "ephemeral": true, "approvalPolicy": approval, "sandbox": sandbox,
-                        "developerInstructions": Agent.instructions(agent.directory)]])
+                        "developerInstructions": Agent.instructions(agent.directory, for: .openai)]])
                 case 2:
                     guard let result = event["result"] as? [String: Any], let thread = result["thread"] as? [String: Any], let id = thread["id"] as? String else {
                         throw AppError("Codex CLI returned an invalid thread. Update Codex and retry.")

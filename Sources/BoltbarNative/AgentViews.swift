@@ -336,6 +336,8 @@ enum HelpContent {
 
         Each project remembers its permission. With an empty message, Tab outlines the model chip, Tab again the agent chip, and ⇧Tab goes back. ↵ on the agent chip turns agent mode on or off, as does a click on the terminal icon. On the agent chip, ↑ ↓ change project, ← → change permission, ⌫ twice removes a project from the list (the folder is untouched); click it for the full list. Drop a folder on the bar to add it; the first project is your Documents folder.
 
+        It follows the project's own rules: Claude Code reads CLAUDE.md, or AGENTS.md when there is none, and Codex the other way round.
+
         When it asks, ⌘↵ allows, ⌥⌘↵ allows the same thing for the rest of the chat, and Esc denies. Stop denies anything still waiting. Web search is off in agent mode.
 
         ## Commands

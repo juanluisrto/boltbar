@@ -37,7 +37,40 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(CodexAgent.policy(.full).approval, "never")
     }
 
-    func testCodexEditAcceptsChangesInsideTheProjectOnly() async throws {
+    func testEachAgentGetsTheProjectRulesItWouldMiss() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("boltbar-rules-\(UUID())")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent(".claude"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func write(_ name: String, _ text: String) throws { try text.write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8) }
+        func remove(_ name: String) throws { try FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
+        XCTAssertNil(Agent.projectRules(dir.path, for: .anthropic))
+        XCTAssertEqual(Agent.instructions(dir.path, for: .anthropic), Agent.instructions(folder, for: .anthropic).replacingOccurrences(of: folder, with: dir.path))
+
+        try write("AGENTS.md", "Run make test.")
+        let fallback = try XCTUnwrap(Agent.projectRules(dir.path, for: .anthropic))
+        XCTAssertTrue(fallback.contains("file=\"AGENTS.md\"") && fallback.contains("Run make test."), "Claude falls back to AGENTS.md")
+        XCTAssertNil(Agent.projectRules(dir.path, for: .openai), "Codex reads AGENTS.md itself")
+
+        try write("CLAUDE.md", "Use tabs."); try write(".claude/CLAUDE.md", "Prefer Swift."); try write("CLAUDE.local.md", "   ")
+        let claude = try XCTUnwrap(Agent.projectRules(dir.path, for: .anthropic))
+        XCTAssertTrue(claude.contains("Use tabs.") && claude.contains("Prefer Swift."))
+        XCTAssertFalse(claude.contains("Run make test."), "CLAUDE.md wins over AGENTS.md")
+        XCTAssertFalse(claude.contains("CLAUDE.local.md"), "Empty files are skipped")
+        let args = ClaudeAgent.arguments(request(), agent: AgentTurn(directory: dir.path, permission: .look) { _ in .deny })
+        XCTAssertTrue(args[args.firstIndex(of: "--append-system-prompt")! + 1].contains("Use tabs."))
+
+        try remove("AGENTS.md")
+        let codex = try XCTUnwrap(Agent.projectRules(dir.path, for: .openai), "Codex gets CLAUDE.md when there's no AGENTS.md")
+        XCTAssertTrue(codex.contains("Use tabs."))
+        try write("AGENTS.override.md", "Override.")
+        XCTAssertNil(Agent.projectRules(dir.path, for: .openai), "Codex reads its override itself too")
+
+        try write("CLAUDE.md", String(repeating: "x", count: 50_000))
+        let long = try XCTUnwrap(Agent.projectRules(dir.path, for: .anthropic))
+        XCTAssertLessThan(long.count, 41_000); XCTAssertTrue(long.contains("the rest of this file was cut"))
+    }
+
+    @MainActor func testCodexEditAcceptsChangesInsideTheProjectOnly() async throws {
         var stream = CodexAgentStream(directory: folder, permission: .edit)
         func change(_ id: String, _ path: String) throws {
             _ = try stream.consume(["method": "item/started", "params": ["item": ["id": id, "type": "fileChange", "status": "inProgress", "changes": [["path": path, "kind": ["type": "add"]]]]]])
@@ -46,18 +79,18 @@ final class AgentTests: XCTestCase {
         try change("out", "/etc/hosts")
         try change("climb", folder + "/../other/a.swift")
         try change("sibling", folder + "-copy/a.swift")
-        var asked: [String] = []
+        let log = AskedLog()
         let inside = await stream.answer("item/fileChange/requestApproval", params: ["itemId": "in"]) { _ in XCTFail("Edits in the project go through"); return .deny }
         XCTAssertEqual(inside["decision"] as? String, "accept")
         for id in ["out", "climb", "sibling"] {
-            let answer = await stream.answer("item/fileChange/requestApproval", params: ["itemId": id]) { approval in asked.append(id); return .deny }
+            let answer = await stream.answer("item/fileChange/requestApproval", params: ["itemId": id]) { _ in log.asked.append(id); return .deny }
             XCTAssertEqual(answer["decision"] as? String, "decline")
         }
-        XCTAssertEqual(asked, ["out", "climb", "sibling"], "Changes outside the project still ask")
-        let wider = await stream.answer("item/fileChange/requestApproval", params: ["itemId": "in", "grantRoot": "/"]) { _ in asked.append("root"); return .deny }
+        XCTAssertEqual(log.asked, ["out", "climb", "sibling"], "Changes outside the project still ask")
+        let wider = await stream.answer("item/fileChange/requestApproval", params: ["itemId": "in", "grantRoot": "/"]) { _ in log.asked.append("root"); return .deny }
         XCTAssertEqual(wider["decision"] as? String, "decline")
-        _ = await stream.answer("item/commandExecution/requestApproval", params: ["command": "make", "cwd": folder]) { _ in asked.append("make"); return .allow }
-        XCTAssertEqual(asked.suffix(2), ["root", "make"], "Wider write access and commands still ask")
+        _ = await stream.answer("item/commandExecution/requestApproval", params: ["command": "make", "cwd": folder]) { _ in log.asked.append("make"); return .allow }
+        XCTAssertEqual(log.asked.suffix(2), ["root", "make"], "Wider write access and commands still ask")
 
         var careful = CodexAgentStream(directory: folder, permission: .ask)
         _ = try careful.consume(["method": "item/started", "params": ["item": ["id": "in", "type": "fileChange", "changes": [["path": folder + "/a.swift"]]]]])
@@ -268,3 +301,6 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(model.agentProject?.permission, .full, "Settings sets Full directly")
     }
 }
+
+/// What the approval handler was asked, kept on the main actor where the handler runs.
+@MainActor private final class AskedLog { var asked: [String] = [] }
