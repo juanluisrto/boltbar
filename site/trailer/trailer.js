@@ -105,13 +105,13 @@ const TITLES = [
   { text: "Search every message.", at: 20.9, out: 24.6, x: 960, y: 150, size: 76, accent: [1, 2] },
   { text: "Or let it do the work.", at: A(0.2), out: A(1.05), x: 960, y: 330, size: 92, agent: true },
   { text: "Look. Ask. Edit. Full.", at: A(1.5), out: A(3.75), x: 960, y: 330, size: 92, agent: true, wordAt: [A(1.5), A(2.0), A(2.5), A(3.0)], colors: LIGHTS },
-  { text: "It asks before it acts.", at: A(5.85), out: A(7.2), x: 960, y: 150, size: 76, agent: true, accent: [1] },
+  { text: "You decide when it asks.", at: A(5.85), out: A(7.2), x: 960, y: 150, size: 76, agent: true, accent: [1] },
   { text: "Then pick it up in your terminal.", at: A(7.95), out: A(8.65), x: 960, y: 150, size: 70, agent: true, accent: [5] },
   { text: "Gone when you’re done.", at: 26.25, out: 27.6, x: 960, y: 520, size: 100 },
   { text: "Keys in Keychain.", at: 27.75, out: 28.95, x: 960, y: 470, size: 84 },
   { text: "Chats on your Mac.", at: 28.0, out: 28.95, x: 960, y: 580, size: 84, color: AMBER },
   { text: "Boltbar", at: 29.95, out: 99, x: 960, y: 640, size: 120, weight: 650, stagger: 0.04 },
-  { text: "Free & open source · 3 MB · macOS 13+", at: 31.05, out: 99, x: 960, y: 858, size: 26, weight: 450, stagger: 0.03, color: "rgba(255,255,255,0.7)" },
+  { text: "Free & open source · 12 MB · macOS 13+", at: 31.05, out: 99, x: 960, y: 858, size: 26, weight: 450, stagger: 0.03, color: "rgba(255,255,255,0.7)" },
 ];
 
 const KEYS = [

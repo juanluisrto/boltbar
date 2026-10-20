@@ -2,10 +2,10 @@
 // Text written during a reply queues and goes out with the next turn; → opens
 // previous chats; Esc hides the bar and ⌥ Space brings it back. ⌘J turns on
 // agent mode, where a scripted Claude Code or Codex works in a demo project.
-import { createBar, popoverHTML, agentPopoverHTML, totalLength, EFFORTS, MODELS, PERMISSIONS, THEMES } from "/boltbar/bar.js?v=0.6.0";
-import { replyTo } from "/boltbar/replies.js?v=0.6.0";
-import { HISTORY, dateLabel, matches } from "/boltbar/history-data.js?v=0.6.0";
-import { PROJECTS, COMMANDS, HELP, agentScript, sessionId } from "/boltbar/agent-data.js?v=0.6.0";
+import { createBar, popoverHTML, agentPopoverHTML, totalLength, EFFORTS, MODELS, PERMISSIONS, THEMES } from "/boltbar/bar.js?v=0.6.0.1";
+import { replyTo } from "/boltbar/replies.js?v=0.6.0.1";
+import { HISTORY, dateLabel, matches } from "/boltbar/history-data.js?v=0.6.0.1";
+import { PROJECTS, COMMANDS, HELP, agentScript, sessionId } from "/boltbar/agent-data.js?v=0.6.0.1";
 
 const CHARS_PER_SECOND = 170;
 const INTERRUPT_DELAY = 600;

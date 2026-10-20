@@ -35,10 +35,10 @@ export const HELP = [
   {
     kind: "keys",
     rows: [
-      ["Look · gray", "Reads files and runs read-only commands; never changes anything"],
+      ["Look · gray", "Reads files and runs read-only commands; anything else is refused"],
       ["Ask · green", "Asks before every command or change"],
-      ["Edit · amber", "Changes files in the project without asking; asks before other commands"],
-      ["Full · red", "Never asks. It takes a second → and lasts 24 hours"],
+      ["Edit · amber", "Changes files in the project without asking, deletes included; asks before anything else"],
+      ["Full · red", "Never asks, anywhere. It takes a second →, and goes back to Ask after 24 hours unless you turn that off in Settings"],
     ],
   },
   { kind: "p", text: "Tab with an empty message outlines the model chip, Tab again the agent chip: ↑ ↓ change project, ← → permission, ↵ turns agent mode on or off. Click the project name for the list, or the terminal icon to turn it off." },

@@ -10,12 +10,12 @@
   <link rel="apple-touch-icon" href="/boltbar/assets/icon-180.png">
   <meta property="og:title" content="Boltbar: ask anything, from anywhere on your Mac">
   <meta property="og:description" content="A small, native chat bar for GPT and Claude, with an agent mode for Claude Code and Codex. One shortcut, any app.">
-  <meta property="og:image" content="https://juanluis.me/boltbar/assets/og.png">
+  <meta property="og:image" content="https://juanluis.me/boltbar/assets/og.png?v=0.6.0.1">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#161617">
-  <link rel="stylesheet" href="/boltbar/bar.css?v=0.6.0">
-  <link rel="stylesheet" href="/boltbar/styles.css?v=0.6.0">
+  <link rel="stylesheet" href="/boltbar/bar.css?v=0.6.0.1">
+  <link rel="stylesheet" href="/boltbar/styles.css?v=0.6.0.1">
 </head>
 <body>
   <header class="top">
@@ -41,7 +41,7 @@
     </section>
 
     <figure class="film">
-      <video src="/boltbar/assets/trailer.mp4?v=0.6.0" poster="/boltbar/assets/poster.jpg?v=0.6.0" autoplay muted loop playsinline preload="metadata" aria-label="Boltbar trailer: summoning the bar over a code editor, asking for Swift code, switching models, searching previous chats, and agent mode fixing a failing test after asking for permission"></video>
+      <video src="/boltbar/assets/trailer.mp4?v=0.6.0.1" poster="/boltbar/assets/poster.jpg?v=0.6.0.1" autoplay muted loop playsinline preload="metadata" aria-label="Boltbar trailer: summoning the bar over a code editor, asking for Swift code, switching models, searching previous chats, and agent mode fixing a failing test, asking before it runs the tests"></video>
       <button type="button" class="pause" data-video-toggle>pause</button>
     </figure>
 
@@ -98,15 +98,15 @@
       <h2>Agent mode</h2>
       <p>Turn it on and your request goes to the Claude Code or Codex CLI you already use, working in a project folder you choose. Each action shows as one line above the reply, and it asks before it acts as much as you want it to.</p>
       <dl class="also lights">
-        <dt><span class="light look"></span>look</dt><dd>Reads files and runs read-only commands. Never changes anything.</dd>
+        <dt><span class="light look"></span>look</dt><dd>Reads files and runs read-only commands; anything else is refused.</dd>
         <dt><span class="light ask"></span>ask</dt><dd>Asks before every command or change: <kbd>⌘ ↵</kbd> allows, <kbd>⌥ ⌘ ↵</kbd> allows it for the rest of the chat, <kbd>esc</kbd> denies.</dd>
-        <dt><span class="light edit"></span>edit</dt><dd>Changes files in the project without asking, and asks before anything else.</dd>
-        <dt><span class="light full"></span>full</dt><dd>Never asks. It takes a second press, and goes back to Ask after 24 hours.</dd>
+        <dt><span class="light edit"></span>edit</dt><dd>Changes files in the project without asking, deletes included, and asks before anything else.</dd>
+        <dt><span class="light full"></span>full</dt><dd>Never asks, and can run any command anywhere on your Mac. It takes a second press, and goes back to Ask after 24 hours unless you turn that off in Settings.</dd>
       </dl>
       <dl class="also">
         <dt>projects</dt><dd>Your Documents folder to start. Drop a folder on the bar to add it; each one remembers its permission.</dd>
-        <dt>rules</dt><dd>It follows the project's <code>CLAUDE.md</code> or <code>AGENTS.md</code>, whichever it has.</dd>
-        <dt>terminal</dt><dd>Every agent chat is a real Claude Code session or Codex thread. <code>/terminal</code> copies the command that picks it up where Boltbar left off.</dd>
+        <dt>rules</dt><dd>It follows the <code>CLAUDE.md</code> or <code>AGENTS.md</code> at the top of the project, whichever it has.</dd>
+        <dt>terminal</dt><dd>Every agent chat is a real Claude Code session or Codex thread. <code>/terminal</code> copies the command that picks it up where Boltbar left off. Switching project or CLI starts a new one.</dd>
         <dt>needs</dt><dd>The Claude Code or Codex CLI, signed in. Web search is off while it works.</dd>
       </dl>
     </section>
@@ -115,18 +115,18 @@
       <h2>Also</h2>
       <dl class="also">
         <dt>accounts</dt><dd>Your OpenAI or Anthropic API keys, kept in the Keychain, or the Codex and Claude Code logins you already have.</dd>
-        <dt>attachments</dt><dd>Paste, drop or pick images, PDFs and text files. They stay with the message for follow-up questions.</dd>
-        <dt>web</dt><dd>Hover <kbd>+</kbd> for the globe: turn it on and the model searches when it needs to, citing its sources.</dd>
+        <dt>attachments</dt><dd>Paste, drop or pick images, PDFs and text files. They stay with the message for follow-up questions. PDFs need an API key; with a CLI login, images and text files work.</dd>
+        <dt>web</dt><dd>Hover <kbd>+</kbd> for the globe: turn it on and the model searches when it needs to, citing its sources. With Codex, search needs an OpenAI API key.</dd>
         <dt>commands</dt><dd>Type <kbd>/</kbd>: <code>/help</code>, <code>/new</code>, <code>/agent</code>, <code>/terminal</code>.</dd>
         <dt>themes</dt><dd>Paper, Mist, Graphite and Midnight, with any accent colour.</dd>
-        <dt>size</dt><dd>Swift and AppKit. A 3 MB download, no Electron, no account.</dd>
+        <dt>size</dt><dd>Swift and AppKit. About 12 MB installed, under 4 MB to download. No Electron, no account.</dd>
         <dt>updates</dt><dd>Signed, in-app, installed when you choose.</dd>
       </dl>
     </section>
 
     <section>
       <h2>Privacy</h2>
-      <p>Your keys stay in the Keychain. Chats and attachments stay on your Mac, in <code>~/Library/Application Support/Boltbar</code>. Boltbar talks to the provider you choose and to GitHub to check for updates. There are no analytics. In agent mode the CLI you pick works only in the folder you pick, with the permission you set, and its sessions stay in its own history on your Mac.</p>
+      <p>Your keys stay in the Keychain. Chats and attachments stay on your Mac, in <code>~/Library/Application Support/Boltbar</code>. Boltbar talks to the provider you choose and to GitHub to check for updates. There are no analytics. In agent mode, the Claude Code or Codex CLI runs on your Mac in the folder you choose and sends what it reads to its provider, as it does in your terminal. The permission light decides what it may do without asking; in Full, that is anything. Its sessions stay in its own history on your Mac.</p>
     </section>
 
     <section id="install">
@@ -142,7 +142,7 @@
   </footer>
 
   <script type="module">
-    import { mountPlayground } from "/boltbar/playground.js?v=0.6.0";
+    import { mountPlayground } from "/boltbar/playground.js?v=0.6.0.1";
     mountPlayground(document.querySelector("[data-playground]"));
 
     const video = document.querySelector("video");
