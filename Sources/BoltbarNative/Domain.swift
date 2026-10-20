@@ -111,6 +111,15 @@ struct AppError: LocalizedError {
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
 }
+struct Notice {
+    var text: String
+    var actions: [NoticeAction] = []
+}
+struct NoticeAction: Identifiable {
+    let id = UUID()
+    let title: String
+    let run: () -> Void
+}
 
 enum Keychain {
     static let service = "com.boltbar.keys"
@@ -118,6 +127,10 @@ enum Keychain {
     // Serialize the legacy process-wide UI flag, restoring it after each read.
     private static let interactionLock = NSLock()
     static func read(_ provider: Provider, allowInteraction: Bool = false) throws -> String? {
+        try read(account: provider.rawValue, name: "\(provider.title) key", allowInteraction: allowInteraction)
+    }
+    /// `name` completes "Approve access to the saved …" when macOS wants to ask first.
+    static func read(account: String, name: String, allowInteraction: Bool = false) throws -> String? {
         interactionLock.lock(); defer { interactionLock.unlock() }
         var previous: DarwinBoolean = false
         let captured = SecKeychainGetUserInteractionAllowed(&previous) == errSecSuccess
@@ -126,7 +139,7 @@ enum Keychain {
         }
         defer { if captured && !allowInteraction { SecKeychainSetUserInteractionAllowed(previous.boolValue) } }
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-            kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+            kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         if !allowInteraction {
             let context = LAContext(); context.interactionNotAllowed = true
             query[kSecUseAuthenticationContext as String] = context
@@ -135,20 +148,29 @@ enum Keychain {
         let code = SecItemCopyMatching(query as CFDictionary, &result)
         if code == errSecItemNotFound { return nil }
         if code == errSecInteractionNotAllowed || code == errSecAuthFailed {
-            throw AppError("Approve access to the saved \(provider.title) key in Settings.")
+            throw AppError("Approve access to the saved \(name) in Settings.")
         }
         guard code == errSecSuccess else { throw AppError("Keychain read failed (\(code)).") }
         return (result as? Data).flatMap { String(data: $0, encoding: .utf8) }
     }
     static func save(_ key: String, for provider: Provider) throws {
-        interactionLock.lock(); defer { interactionLock.unlock() }
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw AppError("Enter an API key to save it.") }
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue]
-        let values: [String: Any] = [kSecValueData as String: Data(key.utf8)]
+        try save(key, account: provider.rawValue)
+    }
+    static func save(_ value: String, account: String) throws {
+        interactionLock.lock(); defer { interactionLock.unlock() }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+        let values: [String: Any] = [kSecValueData as String: Data(value.utf8)]
         var status = SecItemUpdate(query as CFDictionary, values as CFDictionary)
         if status == errSecItemNotFound { status = SecItemAdd(query.merging(values) { _, new in new } as CFDictionary, nil) }
         guard status == errSecSuccess else { throw AppError("Keychain save failed (\(status)).") }
+    }
+    static func delete(account: String) throws {
+        interactionLock.lock(); defer { interactionLock.unlock() }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw AppError("Keychain delete failed (\(status)).") }
     }
     static func key(_ provider: Provider) throws -> String? {
         // A credential explicitly supplied by the launching environment takes

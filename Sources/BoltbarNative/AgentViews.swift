@@ -365,7 +365,7 @@ enum HelpContent {
         Paste, drop or pick images, PDFs and text files; they stay with the message for follow-ups. Hover + for the globe, which lets the model search the web with numbered sources, and your previous chats.
 
         ## Privacy
-        API keys stay in the Keychain. Chats and attachments stay on your Mac. Boltbar talks to the provider you choose and to GitHub for signed updates; there are no analytics.
+        API keys stay in the Keychain. Chats and attachments stay on your Mac. Boltbar talks to the provider you choose and to GitHub for signed updates; there are no analytics. A supporter license is checked on your Mac, never online.
         """
     }
 }
