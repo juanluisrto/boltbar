@@ -162,14 +162,14 @@ struct AgentSettingsView: View {
                     }
                     Spacer()
                     Picker("Permission", selection: Binding(get: { project.permission }, set: { model.setPermission($0, for: project.id) })) {
-                        ForEach(AgentPermission.selectable, id: \.self) { Text($0.title).tag($0) }
+                        ForEach(AgentPermission.allCases, id: \.self) { Text($0.title).tag($0) }
                     }.labelsHidden().frame(width: 90)
                     Button("Remove") { model.removeProject(project.id) }.disabled(model.agentSettings.projects.count < 2)
                         .help("Removes it from Boltbar's list; the folder is untouched")
                 }
             }
             Button("Add folder…") { model.chooseProjectFolder() }
-            Text("The agent runs Claude Code or Codex in the selected project. Look only reads; Ask asks before every command or change. Web search is off in agent mode.")
+            Text("The agent runs Claude Code or Codex in the selected project. Look only reads. Ask asks before every command or change. Edit changes files in the project freely and asks before other commands. Full never asks. Web search is off in agent mode.")
                 .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

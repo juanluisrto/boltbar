@@ -7,14 +7,13 @@ import Foundation
 /// How much the agent may do without asking. Look and Ask ship first.
 enum AgentPermission: String, Codable, CaseIterable {
     case look, ask, edit, full
-    static let selectable: [AgentPermission] = [.look, .ask]
     var title: String { rawValue.capitalized }
     var summary: String {
         switch self {
         case .look: return "Reads files and runs read-only commands; never changes anything"
         case .ask: return "Asks before every command or change"
-        case .edit: return "Edits files in the project; asks before commands"
-        case .full: return "Acts without asking"
+        case .edit: return "Changes files in the project without asking, deletes included; asks before other commands"
+        case .full: return "Runs any command and changes any file without asking"
         }
     }
 }
@@ -116,6 +115,12 @@ enum Agent {
     static func relative(_ path: String, to directory: String) -> String {
         let base = directory.hasSuffix("/") ? directory : directory + "/"
         return path.hasPrefix(base) ? String(path.dropFirst(base.count)) : path
+    }
+    /// Whether a path the agent wants to change lies in the project folder.
+    static func contains(_ directory: String, _ path: String) -> Bool {
+        let base = URL(fileURLWithPath: directory).standardizedFileURL.path
+        let target = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: base, isDirectory: true)).standardizedFileURL.path
+        return target == base || target.hasPrefix(base.hasSuffix("/") ? base : base + "/")
     }
     static func shorten(_ text: String, _ limit: Int = 90) -> String {
         let line = text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? text
@@ -250,7 +255,8 @@ enum CodexAgent {
         switch permission {
         case .look: return ("read-only", "never")
         case .ask: return ("workspace-write", "untrusted")
-        case .edit: return ("workspace-write", "on-request")
+        // Codex has no "edits only" policy: it asks for everything and Boltbar accepts edits inside the project.
+        case .edit: return ("workspace-write", "untrusted")
         case .full: return ("danger-full-access", "never")
         }
     }
@@ -261,7 +267,7 @@ enum CodexAgent {
         defer { child.cancel() }
         try await withTaskCancellationHandler {
             try await child.send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "boltbar", "title": "Boltbar", "version": "0.6.0"]]])
-            var parser = CodexAgentStream(directory: agent.directory)
+            var parser = CodexAgentStream(directory: agent.directory, permission: agent.permission)
             let (sandbox, approval) = policy(agent.permission)
             for try await line in child.lines {
                 try Task.checkCancellation()
@@ -295,18 +301,21 @@ enum CodexAgent {
 /// Turns Codex app-server notifications into text and steps, and approval requests into decisions.
 struct CodexAgentStream {
     let directory: String
+    let permission: AgentPermission
     private var text = CodexChatStream()
     private var steps: [String: AgentStep] = [:]
+    private var changes: [String: [String]] = [:]
     private var afterStep = false
     private var saidSomething = false
     private(set) var completed = false
-    init(directory: String) { self.directory = directory }
+    init(directory: String, permission: AgentPermission = .ask) { self.directory = directory; self.permission = permission }
 
     mutating func consume(_ event: [String: Any]) throws -> [StreamUpdate] {
         var out: [StreamUpdate] = []
         let method = event["method"] as? String
         if method == "item/started" || method == "item/completed", let item = (event["params"] as? [String: Any])?["item"] as? [String: Any],
            let id = item["id"] as? String, var step = Self.step(item, directory: directory) {
+            if let list = item["changes"] as? [[String: Any]] { changes[id] = list.compactMap { $0["path"] as? String } }
             if method == "item/completed" {
                 let status = item["status"] as? String
                 step.status = status == "declined" ? .denied : status == "failed" || (item["exitCode"] as? Int ?? 0) != 0 ? .failed : .done
@@ -328,6 +337,10 @@ struct CodexAgentStream {
             request = ApprovalRequest(id: UUID().uuidString, action: "Run", subject: Self.command(params["command"] as? String ?? ""),
                                       directory: params["cwd"] as? String ?? directory)
         case "item/fileChange/requestApproval":
+            if permission == .edit, params["grantRoot"] as? String == nil, let paths = (params["itemId"] as? String).flatMap({ changes[$0] }),
+               !paths.isEmpty, paths.allSatisfy({ Agent.contains(directory, $0) }) {
+                return ["decision": "accept"]
+            }
             let subject = (params["itemId"] as? String).flatMap { steps[$0]?.title.split(separator: " ", maxSplits: 1).last.map(String.init) } ?? "files"
             request = ApprovalRequest(id: UUID().uuidString, action: "Edit", subject: subject, directory: directory)
         default:

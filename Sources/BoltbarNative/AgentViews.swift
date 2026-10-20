@@ -25,34 +25,56 @@ struct PermissionDot: View {
 
 // MARK: - Agent chip
 
-/// Off: a terminal button. On: the project the agent works in, with its permission light.
+/// Off: a terminal button. On: the same button, which turns it off, joined to the project and its
+/// permission light, which open the picker. The arrows change it in place; only a click opens the popover.
 struct AgentChip: View {
     @Environment(\.boltbarTheme) private var theme
     @ObservedObject var model: ChatModel
+    @State private var hoveringSwitch = false
+    @State private var hoveringProject = false
     var body: some View {
         let shortcut = model.agentSettings.shortcut.label
         if model.agentMode, let project = model.agentProject {
-            Button { model.selectingModel = false; model.showingModelPicker = false; model.showingAgentPicker.toggle() } label: {
-                HStack(spacing: 7) {
+            HStack(spacing: 0) {
+                Button { model.toggleAgentMode() } label: {
                     Image(systemName: "apple.terminal").font(.system(size: 12, weight: .medium))
-                    Text(model.agentSettings.displayName(project)).lineLimit(1).truncationMode(.middle)
-                    PermissionDot(permission: project.permission)
-                }
-                .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(theme.accent)
-                .padding(.horizontal, 11).frame(height: 29).background(theme.surface, in: Capsule())
-                .overlay(Capsule().stroke(model.selectingAgent ? theme.accent : .clear, lineWidth: 1.5))
-            }.buttonStyle(.plain)
-                .accessibilityLabel("Agent mode").accessibilityValue("\(project.name), \(project.permission.title)")
-                .help("Agent works in \(project.displayPath) · \(project.permission.title) · \(shortcut)")
-                .popover(isPresented: Binding(get: { model.showingAgentPicker || model.selectingAgent },
-                                              set: { if !$0 { model.showingAgentPicker = false; model.selectingAgent = false } }),
-                         arrowEdge: .top) { AgentPopover(model: model) }
+                        .padding(.leading, 11).padding(.trailing, 6).frame(maxHeight: .infinity)
+                        .background(hoveringSwitch ? theme.text.opacity(0.08) : .clear).contentShape(Rectangle())
+                }.buttonStyle(.plain).onHover { hoveringSwitch = $0 }
+                    .accessibilityLabel("Turn off agent mode").help("Turn off agent mode · \(shortcut)")
+                Button { model.selectingModel = false; model.showingModelPicker = false; model.showingAgentPicker.toggle() } label: {
+                    HStack(spacing: 7) {
+                        Text(model.agentSettings.displayName(project)).lineLimit(1).truncationMode(.middle)
+                        PermissionDot(permission: project.permission)
+                        if model.selectingAgent { hint(project).fixedSize() }
+                    }
+                    .padding(.leading, 5).padding(.trailing, 11).frame(maxHeight: .infinity)
+                    .background(hoveringProject ? theme.text.opacity(0.06) : .clear).contentShape(Rectangle())
+                }.buttonStyle(.plain).onHover { hoveringProject = $0 }
+                    .accessibilityLabel("Agent project").accessibilityValue("\(project.name), \(project.permission.title)")
+                    .help("Works in \(project.displayPath) · \(project.permission.title) · click to change")
+                    .popover(isPresented: $model.showingAgentPicker, arrowEdge: .top) { AgentPopover(model: model) }
+            }
+            .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(theme.accent)
+            .frame(height: 29).background(theme.surface).clipShape(Capsule())
+            .overlay(Capsule().stroke(model.selectingAgent ? theme.accent : .clear, lineWidth: 1.5))
+            .layoutPriority(1) // Its hints win over the empty drag area beside it.
         } else {
             Button { model.toggleAgentMode() } label: {
                 Image(systemName: "apple.terminal").font(.system(size: 14)).foregroundStyle(.secondary)
                     .frame(width: 30, height: 30).background(theme.surface, in: Circle())
             }.buttonStyle(.plain).accessibilityLabel("Agent mode").accessibilityValue("Off")
                 .help("Agent mode: let the model act in a folder (\(shortcut))")
+        }
+    }
+    /// While the chip has the keys: the level by name, or what the next press will do.
+    @ViewBuilder private func hint(_ project: AgentProject) -> some View {
+        if model.pendingProjectRemoval == project.id {
+            Text("⌫ again removes").foregroundStyle(theme.error)
+        } else if model.pendingFullAccess == project.id {
+            Text("→ again for full").foregroundStyle(AgentPermission.full.color(theme))
+        } else {
+            Text(project.permission.title.lowercased()).foregroundStyle(project.permission.color(theme))
         }
     }
 }
@@ -101,8 +123,8 @@ struct AgentPopover: View {
                 .font(.system(size: 11, design: .monospaced))
             if let project = settings.selectedProject {
                 HStack(spacing: 3) {
-                    ForEach(AgentPermission.selectable, id: \.self) { level in
-                        Button { model.setPermission(level, for: project.id) } label: {
+                    ForEach(AgentPermission.allCases, id: \.self) { level in
+                        Button { model.choosePermission(level, for: project.id) } label: {
                             HStack(spacing: 6) { PermissionDot(permission: level); Text(level.title) }
                                 .font(.system(size: 12, weight: .medium, design: .monospaced)).frame(maxWidth: .infinity).padding(.vertical, 7)
                                 .foregroundStyle(project.permission == level ? theme.text : theme.text.opacity(0.55))
@@ -110,7 +132,12 @@ struct AgentPopover: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(project.permission == level ? .isSelected : [])
                     }
                 }.padding(3).background(theme.surface, in: RoundedRectangle(cornerRadius: 8))
-                Text(project.permission.summary).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if model.pendingFullAccess == project.id {
+                    Text(fullWarning(settings)).font(.system(size: 10, design: .monospaced)).foregroundStyle(AgentPermission.full.color(theme))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(project.permission.summary).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
             Divider()
             Button { model.toggleAgentMode() } label: {
@@ -118,6 +145,10 @@ struct AgentPopover: View {
                     .font(.system(size: 11, design: .monospaced)).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }.padding(14).frame(width: 320).background(theme.background)
+    }
+    private func fullWarning(_ settings: AgentSettings) -> String {
+        let lasts = settings.fullAccessExpires ? "for 24 hours" : "until you change it"
+        return "Full runs any command and changes any file without asking, \(lasts). Press → or click Full again to turn it on."
     }
 }
 
@@ -292,8 +323,10 @@ enum HelpContent {
         \(agentShortcut) or the terminal button lets the model act in a project folder through Claude Code or Codex. The chip shows where it works and its permission light:
         - Gray, Look: reads files and runs read-only commands, never changes anything.
         - Green, Ask: asks before every command or change.
+        - Amber, Edit: changes files in the project without asking, deletes included, and asks before other commands or changes outside it.
+        - Red, Full: runs any command and changes any file without asking. It takes a second → or click, and returns to Ask after 24 hours unless you turn that off in Settings.
 
-        Tab with an empty message moves between the model and agent chips. On the agent chip, ↑ ↓ change project, ← → change permission, ⌫ twice removes a project from the list (the folder is untouched). Drop a folder on the bar to add it; the first project is your Documents folder.
+        Each project remembers its permission. Tab with an empty message moves between the model and agent chips. On the agent chip, ↑ ↓ change project, ← → change permission, ⌫ twice removes a project from the list (the folder is untouched); click it for the full list. Drop a folder on the bar to add it; the first project is your Documents folder.
 
         When it asks, ⌘↵ allows, ⌥⌘↵ allows the same thing for the rest of the chat, and Esc denies. Stop denies anything still waiting. Web search is off in agent mode.
 
@@ -305,7 +338,7 @@ enum HelpContent {
         | /agent | Turn agent mode on or off |
 
         ## Attachments and web
-        Paste, drop or pick images, PDFs and text files; they stay with the message for follow-ups. The globe lets the model search the web, with numbered sources.
+        Paste, drop or pick images, PDFs and text files; they stay with the message for follow-ups. Hover + for the globe, which lets the model search the web with numbered sources, and your previous chats.
 
         ## Privacy
         API keys stay in the Keychain. Chats and attachments stay on your Mac. Boltbar talks to the provider you choose and to GitHub for signed updates; there are no analytics.

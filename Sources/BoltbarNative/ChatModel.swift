@@ -54,6 +54,8 @@ import SwiftUI
     @Published var selectingAgent = false
     @Published var showingAgentPicker = false
     @Published private(set) var pendingProjectRemoval: UUID?
+    /// Full access waits for a second → (or click) on this project.
+    @Published private(set) var pendingFullAccess: UUID?
     @Published private(set) var pendingApproval: ApprovalRequest?
     @Published var showingHelp = false
     @Published var error: String?
@@ -177,7 +179,7 @@ import SwiftUI
     }
     @discardableResult func endModelSelection() -> Bool {
         let active = selectingModel || showingModelPicker || selectingAgent || showingAgentPicker
-        selectingModel = false; showingModelPicker = false; selectingAgent = false; showingAgentPicker = false; pendingProjectRemoval = nil
+        selectingModel = false; showingModelPicker = false; selectingAgent = false; showingAgentPicker = false; pendingProjectRemoval = nil; pendingFullAccess = nil
         return active
     }
 
@@ -186,7 +188,7 @@ import SwiftUI
     /// ⌘J and the terminal button. Turning it on selects the chip, so the arrows adjust it at once.
     func toggleAgentMode() {
         agentMode.toggle()
-        selectingModel = false; showingModelPicker = false; pendingProjectRemoval = nil
+        selectingModel = false; showingModelPicker = false; pendingProjectRemoval = nil; pendingFullAccess = nil
         selectingAgent = agentMode; showingAgentPicker = false
         if agentMode { agentSettings.expireFullAccess() }
     }
@@ -196,7 +198,7 @@ import SwiftUI
         if selectingAgent { selectingAgent = false; selectingModel = true }
         else if selectingModel { selectingModel = false; selectingAgent = true }
         else if forward { selectingAgent = true } else { selectingModel = true }
-        pendingProjectRemoval = nil
+        pendingProjectRemoval = nil; pendingFullAccess = nil
         return true
     }
     func cycleProject(_ direction: Int) {
@@ -204,21 +206,29 @@ import SwiftUI
         guard !projects.isEmpty else { return }
         let current = projects.firstIndex { $0.id == agentProject?.id } ?? 0
         agentSettings.selected = projects[(current + direction + projects.count) % projects.count].id
-        pendingProjectRemoval = nil
+        pendingProjectRemoval = nil; pendingFullAccess = nil
     }
-    func selectProject(_ id: UUID) { agentSettings.selected = id; pendingProjectRemoval = nil }
-    /// ← → steps through the permissions on offer, remembered per project.
+    func selectProject(_ id: UUID) { agentSettings.selected = id; pendingProjectRemoval = nil; pendingFullAccess = nil }
+    /// ← → steps through the permissions, remembered per project. ← while Full waits for its second press stays on Edit.
     func stepPermission(_ direction: Int) {
         guard let project = agentProject else { return }
-        let levels = AgentPermission.selectable
-        let current = levels.firstIndex(of: project.permission) ?? levels.firstIndex(of: .ask) ?? 0
-        setPermission(levels[min(levels.count - 1, max(0, current + direction))], for: project.id)
+        if direction < 0, pendingFullAccess == project.id { pendingFullAccess = nil; return }
+        let levels = AgentPermission.allCases
+        let current = levels.firstIndex(of: project.permission) ?? 1
+        choosePermission(levels[min(levels.count - 1, max(0, current + direction))], for: project.id)
+    }
+    /// From the chip and its popover Full takes a second press; Settings sets it directly.
+    func choosePermission(_ permission: AgentPermission, for id: UUID) {
+        guard let current = agentSettings.projects.first(where: { $0.id == id })?.permission else { return }
+        if permission == .full, current != .full, pendingFullAccess != id { pendingProjectRemoval = nil; pendingFullAccess = id; return }
+        setPermission(permission, for: id)
     }
     func setPermission(_ permission: AgentPermission, for id: UUID) {
-        guard let index = agentSettings.projects.firstIndex(where: { $0.id == id }) else { return }
+        pendingProjectRemoval = nil; pendingFullAccess = nil
+        // Pressing → again on Full mustn't restart its day.
+        guard let index = agentSettings.projects.firstIndex(where: { $0.id == id }), agentSettings.projects[index].permission != permission else { return }
         agentSettings.projects[index].permission = permission
         agentSettings.projects[index].fullSince = permission == .full ? Date() : nil
-        pendingProjectRemoval = nil
     }
     /// Adds a folder (or selects it if already listed) and makes it the agent's project.
     func addProject(path: String) {
@@ -230,13 +240,14 @@ import SwiftUI
     /// ⌫ asks first; the second press removes the project from the list. The folder is untouched.
     func requestProjectRemoval() {
         guard let project = agentProject else { return }
+        pendingFullAccess = nil
         if pendingProjectRemoval == project.id { removeProject(project.id) } else { pendingProjectRemoval = project.id }
     }
     func removeProject(_ id: UUID) {
-        guard agentSettings.projects.count > 1, let index = agentSettings.projects.firstIndex(where: { $0.id == id }) else { pendingProjectRemoval = nil; return }
+        guard agentSettings.projects.count > 1, let index = agentSettings.projects.firstIndex(where: { $0.id == id }) else { pendingProjectRemoval = nil; pendingFullAccess = nil; return }
         agentSettings.projects.remove(at: index)
         if agentSettings.selected == id { agentSettings.selected = agentSettings.projects[min(index, agentSettings.projects.count - 1)].id }
-        pendingProjectRemoval = nil
+        pendingProjectRemoval = nil; pendingFullAccess = nil
     }
     func chooseProjectFolder() { presentFolderPicker?() }
     /// Waits for the user's answer; a request already allowed in this chat goes through.
@@ -343,6 +354,7 @@ import SwiftUI
     func reset() {
         applyStartingModel()
         selectingModel = false; showingModelPicker = false; selectingAgent = false; showingAgentPicker = false; showingHelp = false
+        pendingProjectRemoval = nil; pendingFullAccess = nil
         stop() // Saves any pending messages, held, with the conversation.
         approvedKeys = []
         generation = UUID(); task?.cancel(); task = nil

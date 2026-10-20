@@ -24,6 +24,46 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(CodexAgent.policy(.look).approval, "never")
         XCTAssertEqual(CodexAgent.policy(.ask).sandbox, "workspace-write")
         XCTAssertEqual(CodexAgent.policy(.ask).approval, "untrusted")
+        let edit = ClaudeAgent.arguments(request(), agent: turn(.edit))
+        XCTAssertEqual(edit[edit.firstIndex(of: "--permission-mode")! + 1], "acceptEdits")
+        XCTAssertEqual(edit[edit.firstIndex(of: "--permission-prompt-tool")! + 1], "stdio", "Edit still asks before commands")
+        let full = ClaudeAgent.arguments(request(), agent: turn(.full))
+        XCTAssertEqual(full[full.firstIndex(of: "--permission-mode")! + 1], "bypassPermissions")
+        XCTAssertTrue(full.contains("--allow-dangerously-skip-permissions"))
+        XCTAssertFalse(full.contains("--permission-prompt-tool"))
+        XCTAssertEqual(CodexAgent.policy(.edit).sandbox, "workspace-write")
+        XCTAssertEqual(CodexAgent.policy(.edit).approval, "untrusted", "Codex asks and Boltbar accepts edits in the project")
+        XCTAssertEqual(CodexAgent.policy(.full).sandbox, "danger-full-access")
+        XCTAssertEqual(CodexAgent.policy(.full).approval, "never")
+    }
+
+    func testCodexEditAcceptsChangesInsideTheProjectOnly() async throws {
+        var stream = CodexAgentStream(directory: folder, permission: .edit)
+        func change(_ id: String, _ path: String) throws {
+            _ = try stream.consume(["method": "item/started", "params": ["item": ["id": id, "type": "fileChange", "status": "inProgress", "changes": [["path": path, "kind": ["type": "add"]]]]]])
+        }
+        try change("in", folder + "/Sources/a.swift")
+        try change("out", "/etc/hosts")
+        try change("climb", folder + "/../other/a.swift")
+        try change("sibling", folder + "-copy/a.swift")
+        var asked: [String] = []
+        let inside = await stream.answer("item/fileChange/requestApproval", params: ["itemId": "in"]) { _ in XCTFail("Edits in the project go through"); return .deny }
+        XCTAssertEqual(inside["decision"] as? String, "accept")
+        for id in ["out", "climb", "sibling"] {
+            let answer = await stream.answer("item/fileChange/requestApproval", params: ["itemId": id]) { approval in asked.append(id); return .deny }
+            XCTAssertEqual(answer["decision"] as? String, "decline")
+        }
+        XCTAssertEqual(asked, ["out", "climb", "sibling"], "Changes outside the project still ask")
+        let wider = await stream.answer("item/fileChange/requestApproval", params: ["itemId": "in", "grantRoot": "/"]) { _ in asked.append("root"); return .deny }
+        XCTAssertEqual(wider["decision"] as? String, "decline")
+        _ = await stream.answer("item/commandExecution/requestApproval", params: ["command": "make", "cwd": folder]) { _ in asked.append("make"); return .allow }
+        XCTAssertEqual(asked.suffix(2), ["root", "make"], "Wider write access and commands still ask")
+
+        var careful = CodexAgentStream(directory: folder, permission: .ask)
+        _ = try careful.consume(["method": "item/started", "params": ["item": ["id": "in", "type": "fileChange", "changes": [["path": folder + "/a.swift"]]]]])
+        let ask = await careful.answer("item/fileChange/requestApproval", params: ["itemId": "in"]) { _ in .allow }
+        XCTAssertEqual(ask["decision"] as? String, "accept")
+        XCTAssertTrue(Agent.contains(folder, "Sources/a.swift"), "Relative paths resolve against the project")
     }
 
     func testClaudeEventsBecomeStepsTextAndApprovals() async throws {
@@ -182,6 +222,26 @@ final class AgentTests: XCTestCase {
         model.stepPermission(-1)
         XCTAssertEqual(model.agentProject?.permission, .look)
         model.stepPermission(1); model.stepPermission(1)
-        XCTAssertEqual(model.agentProject?.permission, .ask, "Only Look and Ask are offered for now")
+        XCTAssertEqual(model.agentProject?.permission, .edit)
+        let id = try XCTUnwrap(model.agentProject?.id)
+        model.stepPermission(1)
+        XCTAssertEqual(model.agentProject?.permission, .edit, "Full takes a second press")
+        XCTAssertEqual(model.pendingFullAccess, id)
+        model.stepPermission(-1)
+        XCTAssertEqual(model.agentProject?.permission, .edit, "← while Full waits stays on Edit")
+        XCTAssertNil(model.pendingFullAccess)
+        model.stepPermission(1); model.stepPermission(1)
+        XCTAssertEqual(model.agentProject?.permission, .full)
+        let since = try XCTUnwrap(model.agentProject?.fullSince)
+        model.stepPermission(1)
+        XCTAssertEqual(model.agentProject?.fullSince, since, "Pressing → on Full doesn't restart its day")
+        model.stepPermission(-1)
+        XCTAssertEqual(model.agentProject?.permission, .edit); XCTAssertNil(model.agentProject?.fullSince)
+        model.choosePermission(.full, for: id)
+        XCTAssertEqual(model.agentProject?.permission, .edit, "A click on Full asks for a second one too")
+        model.endModelSelection()
+        XCTAssertNil(model.pendingFullAccess, "Leaving the chip forgets the first press")
+        model.setPermission(.full, for: id)
+        XCTAssertEqual(model.agentProject?.permission, .full, "Settings sets Full directly")
     }
 }
