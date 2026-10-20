@@ -78,8 +78,8 @@ final class ChatPanel: NSPanel {
         let editItem = NSMenuItem(); let edit = NSMenu(title: "Edit")
         for (title, selector, key) in [("Cut", #selector(NSText.cut(_:)), "x"), ("Copy", #selector(NSText.copy(_:)), "c"), ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")] { edit.addItem(withTitle: title, action: selector, keyEquivalent: key) }
         editItem.submenu = edit; root.addItem(editItem); NSApp.mainMenu = root
-        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        status.button?.image = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Boltbar")
+        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        status.button?.image = Mark.statusImage()
         status.button?.toolTip = "Boltbar"
         let menu = NSMenu()
         let newChatStatus = menu.addItem(withTitle: "New chat", action: #selector(self.newChat), keyEquivalent: ""); newChatStatus.target = self
