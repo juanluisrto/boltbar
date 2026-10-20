@@ -3,8 +3,13 @@
 // it frame by frame. Cuts land on a 120 BPM grid (one beat = 0.5 s).
 import { createBar, highlightHTML, totalLength, AMBER, THEMES, withAccent, esc } from "/boltbar/bar.js";
 import { HISTORY, dateLabel, matches } from "/boltbar/history-data.js";
+import { COMMANDS } from "/boltbar/agent-data.js";
 
-export const DURATION = 36;
+export const DURATION = 45;
+// Agent mode is spliced in at 25 s. The scenes after it keep their original
+// times in the code below and play AGENT_LEN later.
+const AGENT_AT = 25, AGENT_LEN = 9;
+const A = (r) => AGENT_AT + r;
 export const FPS = 60;
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -78,6 +83,15 @@ const KYOTO = HISTORY.find((c) => c.id === "kyoto");
 const SEARCH = "kyoto";
 const HISTORY_OPEN = 19.35, BROWSE_BEATS = [20.0, 20.4], TYPE_START = 20.85, TYPE_END = 21.55, OPEN_AT = 22.3;
 
+// Agent mode: ⌘J, the light from Look to the edge of Full, a task in Edit that
+// stops to ask before running the tests, then /terminal.
+const AGENT_TASK = "Fix the failing test";
+const AGENT_REPLY = [{ kind: "p", text: "The debounce fired on every keystroke. **SearchField** now cancels the pending call first, and all 42 tests pass." }];
+const AGENT_REPLY_LEN = totalLength(AGENT_REPLY);
+const LEVEL_BEATS = [[A(1.5), "look"], [A(2.0), "ask"], [A(2.5), "edit"], [A(3.0), "pending"], [A(3.45), "edit"]];
+const TERMINAL = "cd ~/Developer/searchkit && claude --resume 251c0c05-428d-4699-a4cd-d8583e446e89";
+const LIGHTS = ["#8E8E93", "#A0CCB8", "#E5BB88", "#E79891"];
+
 const TITLES = [
   { text: "Mid-thought.", at: 0.5, out: 1.85, x: 960, y: 520, size: 150 },
   { text: "Mid-code.", at: 2.0, out: 3.6, x: 960, y: 520, size: 150 },
@@ -89,6 +103,10 @@ const TITLES = [
   { text: "or the Claude Code and Codex login you already have.", at: 16.7, out: 18.75, x: 960, y: 392, size: 38, weight: 500, stagger: 0.03, color: "rgba(255,255,255,0.72)" },
   { text: "Every chat, one key away.", at: 19.55, out: 20.45, x: 960, y: 150, size: 76 },
   { text: "Search every message.", at: 20.9, out: 24.6, x: 960, y: 150, size: 76, accent: [1, 2] },
+  { text: "Or let it do the work.", at: A(0.2), out: A(1.05), x: 960, y: 330, size: 92, agent: true },
+  { text: "Look. Ask. Edit. Full.", at: A(1.5), out: A(3.75), x: 960, y: 330, size: 92, agent: true, wordAt: [A(1.5), A(2.0), A(2.5), A(3.0)], colors: LIGHTS },
+  { text: "It asks before it acts.", at: A(5.85), out: A(7.2), x: 960, y: 150, size: 76, agent: true, accent: [1] },
+  { text: "Then pick it up in your terminal.", at: A(7.95), out: A(8.65), x: 960, y: 150, size: 70, agent: true, accent: [5] },
   { text: "Gone when you’re done.", at: 26.25, out: 27.6, x: 960, y: 520, size: 100 },
   { text: "Keys in Keychain.", at: 27.75, out: 28.95, x: 960, y: 470, size: 84 },
   { text: "Chats on your Mac.", at: 28.0, out: 28.95, x: 960, y: 580, size: 84, color: AMBER },
@@ -105,6 +123,14 @@ const KEYS = [
   { label: "→", x: 960, y: 1015, w: 64, at: 19.05, presses: [HISTORY_OPEN], out: 19.75, size: 26 },
   { label: "↓", x: 960, y: 1015, w: 64, at: 19.8, presses: BROWSE_BEATS, out: 20.7, size: 26 },
   { label: "→", x: 960, y: 1015, w: 64, at: 21.9, presses: [OPEN_AT], out: 22.7, size: 26 },
+  { label: "⌘", x: 922, y: 985, w: 74, at: A(0.55), presses: [A(1.0)], out: A(1.2), size: 30, agent: true },
+  { label: "J", x: 1004, y: 985, w: 74, at: A(0.6), presses: [A(1.0)], out: A(1.2), size: 30, agent: true },
+  { label: "←", x: 918, y: 985, w: 74, at: A(1.25), presses: [A(1.5), A(3.45)], out: A(3.7), size: 30, agent: true },
+  { label: "→", x: 1002, y: 985, w: 74, at: A(1.3), presses: [A(2.0), A(2.5), A(3.0)], out: A(3.7), size: 30, agent: true },
+  { label: "return", x: 960, y: 1015, w: 150, h: 58, at: A(4.4), presses: [A(4.75)], out: A(5.0), size: 17, agent: true },
+  { label: "⌘", x: 900, y: 1015, w: 64, at: A(6.0), presses: [A(6.45)], out: A(6.7), size: 26, agent: true },
+  { label: "return", x: 1000, y: 1015, w: 120, h: 58, at: A(6.05), presses: [A(6.45)], out: A(6.7), size: 17, agent: true },
+  { label: "return", x: 960, y: 1015, w: 150, h: 58, at: A(8.05), presses: [A(8.35)], out: A(8.6), size: 17, agent: true },
   { label: "esc", x: 960, y: 1000, w: 120, h: 64, at: 25.25, presses: [25.7], out: 26.05, size: 20 },
   { label: "⌥", x: 905, y: 760, w: 70, at: 30.5, out: 99, size: 28 },
   { label: "space", x: 1030, y: 760, w: 160, h: 70, at: 30.6, out: 99, size: 18 },
@@ -161,6 +187,10 @@ export function buildScene(stage) {
   const hist = createBar();
   histAnchor.append(hist.el);
 
+  const agentAnchor = anchor();
+  const agentBar = createBar();
+  agentAnchor.append(agentBar.el);
+
   const end = add(h("div", "t-end"));
   const icon = h("div", "t-icon", `<span class="t-iconGlow"></span>${ICON_SVG}`);
   const iconGlow = icon.querySelector(".t-iconGlow");
@@ -180,6 +210,7 @@ export function buildScene(stage) {
       const span = h("span", "t-word");
       span.textContent = w + (i < words.length - 1 ? " " : "");
       if (spec.accent?.includes(i)) span.style.color = AMBER;
+      if (spec.colors?.[i]) span.style.color = spec.colors[i];
       el.append(span);
       return span;
     });
@@ -199,8 +230,57 @@ export function buildScene(stage) {
   let lastTyped = -1, lastTerm = "";
 
   // ——— One frame ————————————————————————————————————————————————————
-  return function frame(t) {
-    css(glow, { transform: `translate(${Math.sin(t * 0.4) * 120}px, ${Math.cos(t * 0.3) * 60}px)` });
+  /** Agent mode, on the real clock. */
+  function paintAgent(t) {
+    const inAgent = t >= AGENT_AT && t < AGENT_AT + AGENT_LEN;
+    agentAnchor.style.display = inAgent ? "" : "none";
+    if (!inAgent) return;
+    const s = fade(t, AGENT_AT, AGENT_AT + 0.35, AGENT_AT + AGENT_LEN - 0.4, AGENT_AT + AGENT_LEN);
+    // Close up on the chip, then back to make room for the conversation as the task goes out.
+    const z = easeInOut(prog(t, A(4.5), A(5.0)));
+    css(agentAnchor, { left: "960px", top: `${lerp(790, 940, z)}px`, opacity: String(s), transform: `scale(${lerp(2.25, 1.5, z) + prog(t, AGENT_AT, AGENT_AT + AGENT_LEN) * 0.05})`, filter: `blur(${(1 - s) * 8}px)` });
+    const on = t >= A(1.0);
+    let level = "ask", pending = false;
+    for (const [beat, l] of LEVEL_BEATS) if (t >= beat) l === "pending" ? (pending = true) : ((level = l), (pending = false));
+    const selected = on && t < A(3.9);
+    const sent = t >= A(4.8);
+    const step = (id, kind, title, start, end, detail) => (t < start ? null : { id, kind, title, status: t < end ? "running" : "done", detail: t >= end ? detail : undefined });
+    const steps = [
+      step("read", "read", "Read Tests/SearchFieldTests.swift", A(4.95), A(5.25)),
+      step("edit", "edit", "Edit Sources/SearchField.swift", A(5.3), A(5.65)),
+      step("test", "command", "$ swift test", A(5.7), A(7.0), "42 passed"),
+    ].filter(Boolean);
+    const replying = t >= A(7.05);
+    const messages = sent
+      ? [
+          { id: "aq", role: "user", blocks: [{ kind: "p", text: AGENT_TASK }] },
+          { id: "aa", role: "assistant", author: "Anthropic", steps, blocks: replying ? AGENT_REPLY : [], pending: !replying, revealed: replying ? AGENT_REPLY_LEN * easeInOut(prog(t, A(7.05), A(7.85))) : undefined },
+        ]
+      : [];
+    let draft = "";
+    if (t < A(4.75)) draft = AGENT_TASK.slice(0, Math.round(AGENT_TASK.length * prog(t, A(3.9), A(4.6))));
+    else if (t >= A(7.95) && t < A(8.35)) draft = "/terminal".slice(0, Math.round(9 * prog(t, A(7.95), A(8.2))));
+    const streaming = sent && t < A(7.85);
+    agentBar.update({
+      theme: TRAILER_THEME,
+      messages,
+      draft,
+      caret: (t > A(3.85) && t < A(4.75)) || (t > A(7.9) && t < A(8.35)) || Math.floor(t * 2) % 2 === 0,
+      placeholder: streaming ? "Queue a follow-up…" : on ? "Tell it what to do in searchkit…" : "Ask anything…",
+      model: "Claude Opus 5.5",
+      effort: 1,
+      threadHeight: 440,
+      streaming,
+      agent: { on, selected, name: "searchkit", permission: level, hint: selected ? (pending ? "→ again for full" : level) : null, hintLevel: pending ? "full" : level },
+      approval: t >= A(5.85) && t < A(6.6) ? { action: "Run", subject: "swift test", project: "searchkit", pressed: t >= A(6.45) ? "allow" : null } : null,
+      slash: draft.startsWith("/") ? COMMANDS.filter((c) => c.command.startsWith(draft)) : [],
+      notice: t >= A(8.4) ? `Copied: ${TERMINAL}` : "",
+    });
+  }
+
+  function paint(t, real) {
+    const tOld = t;
+    css(glow, { transform: `translate(${Math.sin(real * 0.4) * 120}px, ${Math.cos(real * 0.3) * 60}px)` });
 
     // Desktop: in focus, blurred behind the bar, gone for the carousel, back (softly) after Esc.
     const deskBlur = t < 25 ? lerp(0, 18, easeOut(prog(t, 4.0, 4.7))) : lerp(18, 3, easeInOut(prog(t, 25.9, 26.8)));
@@ -310,13 +390,15 @@ export function buildScene(stage) {
 
     const fadeOut = 1 - easeIn(prog(t, 35.3, 36));
     for (const { spec, el, spans } of titles) {
+      const t = spec.agent ? real : tOld;
       const on = t >= spec.at - 0.05 && t <= spec.out + 0.5;
       el.style.display = on ? "" : "none";
       if (!on) continue;
       const stagger = spec.stagger ?? 0.07;
       const out = prog(t, spec.out, spec.out + 0.4);
       spans.forEach((span, i) => {
-        const p = easeOut(prog(t, spec.at + i * stagger, spec.at + i * stagger + 0.55));
+        const start = spec.wordAt ? spec.wordAt[i] : spec.at + i * stagger;
+        const p = easeOut(prog(t, start, start + 0.55));
         css(span, {
           opacity: String(p * (1 - easeIn(out)) * (spec.out > 90 ? fadeOut : 1)),
           transform: `translateY(${(1 - p) * 0.42 - out * 0.18}em)`,
@@ -326,6 +408,7 @@ export function buildScene(stage) {
     }
 
     for (const { spec, el, h: hh } of keys) {
+      const t = spec.agent ? real : tOld;
       const on = t >= spec.at && t <= spec.out + 0.5;
       el.style.display = on ? "" : "none";
       if (!on) continue;
@@ -344,8 +427,16 @@ export function buildScene(stage) {
       el.style.setProperty("--glow", String(press));
     }
 
-    flash.style.opacity = String(0.5 * Math.max(...[5.02, 13.0, 19.0, 25.0].map((b) => (t < b ? 0 : 1 - prog(t, b, b + 0.35)))));
-    const g = Math.floor(t * 24);
+    flash.style.opacity = String(0.5 * Math.max(...[5.02, 13.0, 19.0, AGENT_AT, AGENT_AT + AGENT_LEN].map((b) => (real < b ? 0 : 1 - prog(real, b, b + 0.35)))));
+    const g = Math.floor(real * 24);
     grain.style.backgroundPosition = `${(g * 73) % 180}px ${(g * 37) % 180}px`;
+  }
+
+  return function frame(t) {
+    const inAgent = t >= AGENT_AT && t < AGENT_AT + AGENT_LEN;
+    // During agent mode the old timeline holds just before its cut, with the desktop away.
+    paint(inAgent ? AGENT_AT - 0.001 : t >= AGENT_AT + AGENT_LEN ? t - AGENT_LEN : t, t);
+    if (inAgent) deskWrap.style.visibility = "hidden";
+    paintAgent(t);
   };
 }

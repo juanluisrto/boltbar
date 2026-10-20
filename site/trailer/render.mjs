@@ -5,7 +5,7 @@
 //   node site/trailer/render.mjs                      # site/boltbar/assets/trailer.mp4
 //   node site/trailer/render.mjs --stills 5,8.5,21    # PNG stills only
 //   node site/trailer/render.mjs --workers 4          # split into parallel segments
-//   options: --out <file.mp4>  --dir <stills dir>  --fps 60  --from 0  --to 36
+//   options: --out <file.mp4>  --dir <stills dir>  --fps 60  --from 0  --to 45
 import { spawn } from "node:child_process";
 import { createReadStream, existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -23,7 +23,7 @@ const out = args.out ?? join(site, "boltbar/assets/trailer.mp4");
 // across processes, each with its own Chrome, and join the segments losslessly.
 const workers = Number(args.workers ?? 1);
 if (workers > 1 && !args.stills) {
-  const from = Number(args.from ?? 0), to = Number(args.to ?? 36), fps = Number(args.fps ?? 60);
+  const from = Number(args.from ?? 0), to = Number(args.to ?? 45), fps = Number(args.fps ?? 60);
   const frames = Math.round((to - from) * fps);
   const work = mkdtempSync(join(tmpdir(), "trailer-segments-"));
   const segments = Array.from({ length: workers }, (_, k) => {
