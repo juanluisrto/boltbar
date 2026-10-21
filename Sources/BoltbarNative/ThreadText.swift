@@ -204,12 +204,17 @@ enum ThreadBuilder {
     static func tableText(_ table: MarkdownTable, _ style: ThreadStyle) -> NSAttributedString {
         let out = NSMutableAttributedString(attributedString: spacer(style.size(6)))
         let textTable = NSTextTable()
-        textTable.numberOfColumns = table.headers.count; textTable.collapsesBorders = true
+        textTable.numberOfColumns = table.headers.count
         textTable.layoutAlgorithm = .automaticLayoutAlgorithm
         for (row, cells) in ([table.headers] + table.rows).enumerated() {
             for (column, cell) in cells.enumerated() {
                 let block = NSTextTableBlock(table: textTable, startingRow: row, rowSpan: 1, startingColumn: column, columnSpan: 1)
-                block.setBorderColor(style.border); block.setWidth(1, type: .absoluteValueType, for: .border)
+                // Each cell draws its right and bottom edges, the first column and row the outer ones. Collapsed
+                // borders instead laid a full-width table out 1 pt too wide, losing its right border past the edge.
+                block.setBorderColor(style.border)
+                for (edge, drawn) in [(NSRectEdge.maxX, true), (.maxY, true), (.minX, column == 0), (.minY, row == 0)] {
+                    block.setWidth(drawn ? 1 : 0, type: .absoluteValueType, for: .border, edge: edge)
+                }
                 block.setWidth(style.size(7), type: .absoluteValueType, for: .padding)
                 if row == 0 { block.backgroundColor = style.surface }
                 let paragraph = NSMutableParagraphStyle()
@@ -371,6 +376,26 @@ final class ThreadTextView: NSTextView {
     /// the width the view was made with and only adds the clip view's growth, which cut off whole replies.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(NSSize(width: (superview as? NSClipView)?.bounds.width ?? newSize.width, height: newSize.height))
+    }
+    /// A table's borders and padding lie between and beside its cells' lines, where there is no text. Drawing only
+    /// such a strip, as scrolling or a fading scroller does, found no glyphs and left the borders out; a redraw that
+    /// touches a table now draws all of it, still clipped to what needs drawing.
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect.union(tables(near: dirtyRect)))
+    }
+    private func tables(near rect: NSRect) -> NSRect {
+        guard let layout = layoutManager, let container = textContainer, let storage = textStorage, storage.length > 0 else { return .null }
+        let origin = textContainerOrigin
+        // Look past the gaps between rows, across the whole width, for the cells around the strip.
+        let search = NSRect(x: 0, y: rect.minY - 40, width: bounds.width, height: rect.height + 80).offsetBy(dx: -origin.x, dy: -origin.y)
+        let characters = layout.characterRange(forGlyphRange: layout.glyphRange(forBoundingRect: search, in: container), actualGlyphRange: nil)
+        var found = NSRect.null
+        storage.enumerateAttribute(.paragraphStyle, in: characters) { value, range, _ in
+            guard let table = ((value as? NSParagraphStyle)?.textBlocks.first as? NSTextTableBlock)?.table else { return }
+            let glyphs = layout.glyphRange(forCharacterRange: storage.range(of: table, at: range.location), actualCharacterRange: nil)
+            found = found.union(layout.boundingRect(forGlyphRange: glyphs, in: container).offsetBy(dx: origin.x, dy: origin.y))
+        }
+        return found
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

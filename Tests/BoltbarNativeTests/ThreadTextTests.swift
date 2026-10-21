@@ -52,6 +52,34 @@ import XCTest
         XCTAssertLessThanOrEqual(widest, visible, "No line runs past the edge, a table's cells included")
     }
 
+    func testARedrawOfPartOfATableKeepsItsBorders() throws {
+        let coordinator = ChatThread.Coordinator(model: makeModel())
+        let scroll = ChatThread.makeScrollView(coordinator)
+        scroll.frame = NSRect(x: 0, y: 0, width: 500, height: 600)
+        let rows = ["crossbow | 211.432", "docket | 1.020", "infra | 206", "knowledge | 198"].map { "| \($0) |" }.joined(separator: "\n")
+        coordinator.update(messages: [Message(role: .user, text: "Lines per repo"),
+                                      Message(role: .assistant, text: "| Repo | Lines |\n|---|---:|\n" + rows, author: "OpenAI")], theme: theme, revision: 0)
+        let text = try XCTUnwrap(coordinator.text)
+        let layout = try XCTUnwrap(text.layoutManager)
+        func cell(_ substring: String) -> NSRect {
+            layout.lineFragmentUsedRect(forGlyphAt: layout.glyphIndexForCharacter(at: (text.string as NSString).range(of: substring).location), effectiveRange: nil)
+        }
+        /// Whether drawing only `rect`, as scrolling or a fading scroller does, paints anything there.
+        func paints(_ rect: NSRect) throws -> Bool {
+            let bitmap = try XCTUnwrap(text.bitmapImageRepForCachingDisplay(in: rect))
+            text.cacheDisplay(in: rect, to: bitmap)
+            return (0..<bitmap.pixelsWide).contains { x in (0..<bitmap.pixelsHigh).contains { y in (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 } }
+        }
+        // Between two rows there is only padding and the border, no text.
+        let between = NSRect(x: 0, y: cell("docket").maxY + 1, width: text.bounds.width, height: cell("infra").minY - cell("docket").maxY - 2)
+        XCTAssertGreaterThan(between.height, 4)
+        XCTAssertTrue(try paints(between), "The line between two rows is drawn")
+        // Right of the last column's numbers: its padding and the table's right border.
+        let number = cell("211.432")
+        XCTAssertTrue(try paints(NSRect(x: number.maxX + 1, y: number.minY, width: text.bounds.width - number.maxX - 1, height: number.height)),
+                      "The table's right border is drawn")
+    }
+
     func testTheTextSizeScalesEveryPartOfTheThread() throws {
         let coordinator = ChatThread.Coordinator(model: makeModel())
         let scroll = ChatThread.makeScrollView(coordinator)
