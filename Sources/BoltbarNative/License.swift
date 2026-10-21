@@ -10,8 +10,8 @@ struct License: Codable, Equatable {
     /// The day it was issued, as YYYY-MM-DD.
     var issued: String
     var edition: String
-    /// Placeholder until a payment provider is chosen: its checkout link goes here.
-    static let buyURL = URL(string: "https://juanluis.me/boltbar/#support")!
+    /// Redirects to the Stripe Payment Link, so the price or link can change without a release.
+    static let buyURL = URL(string: "https://juanluis.me/boltbar/buy")!
 }
 
 /// A license key is `base64url(JSON payload).base64url(Ed25519 signature of the payload)`,
