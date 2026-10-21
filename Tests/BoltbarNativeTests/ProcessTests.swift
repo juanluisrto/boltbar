@@ -19,6 +19,11 @@ final class ProcessTests: XCTestCase {
             XCTAssertTrue(String(decoding: input, as: UTF8.self).contains("Attached document large.txt:"))
         }
     }
+    func testCaptureKeepsWhatACLIPrintsOnStderr() async throws {
+        // `codex login status` says "Logged in using ChatGPT" on stderr.
+        let output = try await CLI.capture("/bin/sh", args: ["-c", "echo on-stdout; echo on-stderr >&2"])
+        XCTAssertTrue(output.contains("on-stdout") && output.contains("on-stderr"), output)
+    }
     func testProcessDrainsInputLargerThanPipeAndArgumentLimits() async throws {
         let input = Data(repeating: 65, count: 2_097_152)
         let child = try LineProcess(program: "/usr/bin/wc", args: ["-c"], stdin: input)

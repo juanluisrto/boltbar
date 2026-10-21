@@ -26,6 +26,7 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
     var loginCommand: String {
         switch self { case .openai: return "codex login"; case .anthropic: return "claude auth login" }
     }
+    var cliName: String { self == .openai ? "Codex CLI" : "Claude Code" }
     func accepts(_ model: String) -> Bool {
         let id = model.lowercased()
         if ["audio", "realtime", "embed", "transcrib", "tts", "image", "search", "moderation", "codex", "deep-research", "-pro", "instruct"].contains(where: id.contains) { return false }

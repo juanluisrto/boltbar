@@ -21,18 +21,16 @@ struct SettingsSection<Content: View>: View {
 }
 
 struct ProviderSettings: View {
+    @Environment(\.boltbarTheme) private var theme
     @ObservedObject var model: ChatModel
     let provider: Provider
     @State private var key = ""
     @State private var notice: String?
     var body: some View {
         SettingsSection(title: provider.title) {
-            Text(model.catalogs[provider]?.detail ?? "Checking…").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            InterfacePicker(label: "Connection", selection: Binding(get: { model.preferences.transport(provider) }, set: {
-                model.preferences.transports[provider.rawValue] = $0
-                Task { await model.refresh() }
-            }), options: Transport.allCases, title: { $0.title })
-            Group {
+            status(provider.cliName, cli)
+            status("API key", apiKey)
+            if model.keyStatus[provider] == .needsAccess {
                 Button("Allow access to saved key") {
                     Task {
                         do {
@@ -41,23 +39,51 @@ struct ProviderSettings: View {
                         } catch { notice = error.localizedDescription }
                     }
                 }
-                HStack {
-                    SecureField("\(provider.title) API key", text: $key).font(.system(size: 12, design: .monospaced))
-                    Button("Save to Keychain") {
-                        do { try Keychain.save(key, for: provider); key = ""; notice = "Saved in macOS Keychain."; Task { await model.refresh() } }
-                        catch { notice = error.localizedDescription }
-                    }.disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                if let notice { Text(notice).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             }
             HStack {
-                Text(provider.loginCommand).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                Spacer()
-                Button("Copy login command") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(provider.loginCommand, forType: .string) }
+                SecureField(model.keyStatus[provider] == .saved ? "Replace the saved key" : "\(provider.title) API key", text: $key).font(.system(size: 12, design: .monospaced))
+                Button("Save to Keychain") {
+                    do { try Keychain.save(key, for: provider); key = ""; notice = "Saved in macOS Keychain."; Task { await model.refresh() } }
+                    catch { notice = error.localizedDescription }
+                }.disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text("Run this in Terminal to sign in. Boltbar reuses the official CLI session; it never copies or refreshes its login tokens.")
-                .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let notice { Text(notice).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            InterfacePicker(label: "Connection", selection: Binding(get: { model.preferences.transport(provider) }, set: {
+                model.preferences.transports[provider.rawValue] = $0
+                Task { await model.refresh() }
+            }), options: Transport.allCases, title: { $0.title })
+            if let catalog = model.catalogs[provider] {
+                Text(catalog.ready ? (catalog.live ? "Chats use the API key." : "Chats use \(provider.cliName).") : catalog.detail)
+                    .font(.system(.caption, design: .monospaced)).foregroundStyle(catalog.ready ? theme.text.opacity(0.56) : theme.error)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
         }
+    }
+    /// The CLI's own answer, checked when Boltbar starts and on Refresh; Boltbar never touches its login.
+    private var cli: (text: String, ok: Bool?) {
+        switch model.cliStatus[provider] {
+        case nil: return ("Checking…", nil)
+        case .signedIn(let detail)?: return (["Signed in", detail].compactMap { $0 }.joined(separator: " "), true)
+        case .signedOut?: return ("Not signed in", false)
+        case .missing?: return ("Not installed", nil)
+        case .failed(let message)?: return (message, false)
+        }
+    }
+    private var apiKey: (text: String, ok: Bool?) {
+        switch model.keyStatus[provider] {
+        case nil: return ("Checking…", nil)
+        case .saved?: return ("Saved in Keychain", true)
+        case .none?: return ("None", nil)
+        case .needsAccess?: return ("Saved, needs your approval", false)
+        }
+    }
+    private func status(_ name: String, _ state: (text: String, ok: Bool?)) -> some View {
+        HStack(spacing: 8) {
+            Text(name)
+            Spacer()
+            if let ok = state.ok { Circle().fill(ok ? theme.accent : theme.error).frame(width: 7, height: 7) }
+            Text(state.text).foregroundStyle(state.ok == true ? theme.text : theme.text.opacity(0.56)).lineLimit(1).truncationMode(.middle)
+        }.accessibilityElement(children: .combine)
     }
 }
 

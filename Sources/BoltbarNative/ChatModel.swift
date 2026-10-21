@@ -17,6 +17,9 @@ import SwiftUI
         didSet { if let data = try? JSONEncoder().encode(modelList) { defaults.set(data, forKey: "modelList") } }
     }
     @Published var catalogs: [Provider: Catalog] = [:]
+    /// What Settings shows for each provider: its CLI's sign-in and whether an API key is saved.
+    @Published var cliStatus: [Provider: CLIStatus] = [:]
+    @Published var keyStatus: [Provider: KeyStatus] = [:]
     @Published var draft = "" { didSet { if !draft.isEmpty { selectingModel = false } } }
     @Published var selectingModel = false
     @Published var showingModelPicker = false
@@ -422,11 +425,17 @@ import SwiftUI
     func refresh() async {
         guard !refreshing else { return }; refreshing = true
         let transports = preferences.transports
-        await withTaskGroup(of: (Provider, Catalog).self) { group in
+        await withTaskGroup(of: (Provider, Catalog, CLIStatus, KeyStatus).self) { group in
             for provider in Provider.allCases {
-                group.addTask { (provider, await Providers.catalog(provider, transport: transports[provider.rawValue] ?? .automatic)) }
+                group.addTask {
+                    let cli = await CLI.status(provider)
+                    let key: KeyStatus
+                    do { key = try Keychain.key(provider) == nil ? .none : .saved } catch { key = .needsAccess }
+                    return (provider, await Providers.catalog(provider, transport: transports[provider.rawValue] ?? .automatic, cli: cli), cli, key)
+                }
             }
-            for await (provider, received) in group {
+            for await (provider, received, cli, key) in group {
+                cliStatus[provider] = cli; keyStatus[provider] = key
                 guard preferences.transport(provider) == (transports[provider.rawValue] ?? .automatic) else { continue }
                 var catalog = received
                 if catalog.live { defaults.set(catalog.models, forKey: "catalog.\(provider.rawValue)") }

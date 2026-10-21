@@ -7,6 +7,14 @@ struct Catalog {
     var live = false
 }
 
+/// Whether a provider's official CLI is installed and signed in, as its own status command says.
+enum CLIStatus: Equatable {
+    case missing, signedOut, signedIn(String?), failed(String)
+}
+
+/// Whether an API key is saved, or macOS wants to ask before Boltbar may read it.
+enum KeyStatus: Equatable { case none, saved, needsAccess }
+
 /// SSE framing preserves blank lines and partial UTF-8 sequences. Foundation's
 /// AsyncLineSequence omits empty lines, which are significant SSE delimiters.
 struct EventFrames {
@@ -131,7 +139,7 @@ enum Providers {
         }
     }
 
-    static func catalog(_ provider: Provider, transport: Transport) async -> Catalog {
+    static func catalog(_ provider: Provider, transport: Transport, cli: CLIStatus) async -> Catalog {
         do {
             if transport != .cli, let key = try Keychain.key(provider) {
                 let url = provider == .openai ? "https://api.openai.com/v1/models" : "https://api.anthropic.com/v1/models"
@@ -161,13 +169,12 @@ enum Providers {
                 return Catalog(models: ids, detail: "API · synced catalog", ready: true, live: true)
             }
             guard transport != .api else { throw AppError("Add an API key in Settings.") }
-            let program = try CLI.program(provider)
-            let args: [String] = provider == .openai ? ["login", "status"] : ["auth", "status"]
-            let output = try await CLI.capture(program, args: args)
-            if provider == .anthropic, let data = output.data(using: .utf8), let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any], status["loggedIn"] as? Bool == false {
-                throw AppError("Run \(provider.loginCommand), then refresh.")
+            switch cli {
+            case .signedIn: return Catalog(models: provider.defaults, detail: "CLI login · fallback catalog", ready: true)
+            case .missing: throw AppError("Install the official \(provider.title) CLI, then run \(provider.loginCommand).")
+            case .signedOut: throw AppError("Run \(provider.loginCommand), then refresh.")
+            case .failed(let message): throw AppError(message)
             }
-            return Catalog(models: provider.defaults, detail: "CLI login · fallback catalog", ready: true)
         } catch {
             return Catalog(models: provider.defaults, detail: error.localizedDescription + " Fallback catalog.", ready: false)
         }
@@ -181,7 +188,7 @@ final class LineProcess: @unchecked Sendable {
     private let input = Pipe(), output = Pipe(), errors = Pipe()
     private let lock = NSLock()
     private var buffer = Data(), stderr = Data()
-    private var eof = false, exited = false, finished = false
+    private var eof = false, exited = false, finished = false, errorsClosed = false
     private var continuation: AsyncThrowingStream<String, Error>.Continuation!
     private(set) var lines: AsyncThrowingStream<String, Error>!
 
@@ -199,7 +206,7 @@ final class LineProcess: @unchecked Sendable {
         errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard let self else { return }
-            self.lock.lock(); self.stderr.append(data.prefix(max(0, 8192 - self.stderr.count))); self.lock.unlock()
+            self.lock.lock(); self.stderr.append(data.prefix(max(0, 8192 - self.stderr.count))); if data.isEmpty { self.errorsClosed = true }; self.lock.unlock()
             if data.isEmpty { handle.readabilityHandler = nil }
         }
         process.terminationHandler = { [weak self] _ in
@@ -240,6 +247,11 @@ final class LineProcess: @unchecked Sendable {
         if process.terminationStatus == 0 { continuation.finish() }
         else { continuation.finish(throwing: AppError("CLI exited with status \(process.terminationStatus). Check its login and selected model.")) }
     }
+    /// The first 8 KB written to stderr, once the process has closed it.
+    var errorOutput: String? {
+        lock.lock(); defer { lock.unlock() }
+        return errorsClosed ? String(decoding: stderr, as: UTF8.self) : nil
+    }
     func cancel() {
         if process.isRunning { process.terminate() }
     }
@@ -256,10 +268,36 @@ enum CLI {
         } }
         throw AppError("Install the official \(provider.title) CLI, then run \(provider.loginCommand).")
     }
+    /// Asks the CLI itself; a status command that fails means it isn't signed in.
+    static func status(_ provider: Provider) async -> CLIStatus {
+        guard let program = try? program(provider) else { return .missing }
+        do { return status(provider, output: try await capture(program, args: provider == .openai ? ["login", "status"] : ["auth", "status"])) }
+        catch let error as AppError where error.message == "CLI status timed out." { return .failed("\(provider.cliName) didn't answer in time.") }
+        catch { return .signedOut }
+    }
+    /// `codex login status` says "Logged in using ChatGPT"; `claude auth status` prints JSON with `loggedIn`.
+    static func status(_ provider: Provider, output: String) -> CLIStatus {
+        if provider == .anthropic, let data = output.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            guard json["loggedIn"] as? Bool != false else { return .signedOut }
+            return .signedIn((json["email"] as? String).map { "as " + $0 })
+        }
+        if output.contains("Not logged in") { return .signedOut }
+        guard let line = output.split(separator: "\n").first(where: { $0.hasPrefix("Logged in using ") }) else { return .signedIn(nil) }
+        let method = line.dropFirst("Logged in using ".count)
+        return .signedIn(method.hasPrefix("an API key") ? "with an API key" : "with " + method)
+    }
     static func capture(_ program: String, args: [String]) async throws -> String {
         let child = try LineProcess(program: program, args: args)
         return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { var text = ""; for try await line in child.lines { text += line + "\n" }; return text }
+            group.addTask {
+                var text = ""; for try await line in child.lines { text += line + "\n" }
+                // Some CLIs, Codex among them, print their status on stderr; it may close a moment after stdout.
+                for _ in 0..<50 {
+                    if let errors = child.errorOutput { return text + errors }
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                }
+                return text
+            }
             group.addTask { try await Task.sleep(nanoseconds: 12_000_000_000); child.cancel(); throw AppError("CLI status timed out.") }
             defer { group.cancelAll(); child.cancel() }
             return try await group.next()!

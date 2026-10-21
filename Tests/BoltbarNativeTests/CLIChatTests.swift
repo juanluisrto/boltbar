@@ -2,6 +2,22 @@ import XCTest
 @testable import BoltbarNative
 
 final class CLIChatTests: XCTestCase {
+    func testSettingsReadEachCLIsOwnSignInStatus() async {
+        // What `codex login status` and `claude auth status` print.
+        XCTAssertEqual(CLI.status(.openai, output: "Logged in using ChatGPT\n"), .signedIn("with ChatGPT"))
+        XCTAssertEqual(CLI.status(.openai, output: "Logged in using an API key - sk-proj-***abcd\n"), .signedIn("with an API key"), "The key itself is never shown")
+        XCTAssertEqual(CLI.status(.openai, output: "Not logged in\n"), .signedOut)
+        XCTAssertEqual(CLI.status(.anthropic, output: #"{"loggedIn": true, "authMethod": "claude.ai", "email": "me@example.com"}"#), .signedIn("as me@example.com"))
+        XCTAssertEqual(CLI.status(.anthropic, output: #"{"loggedIn": false}"#), .signedOut)
+        // The CLI connection follows that status; the API key is used first when there is one.
+        let signedIn = await Providers.catalog(.openai, transport: .cli, cli: .signedIn(nil))
+        XCTAssertTrue(signedIn.ready)
+        let signedOut = await Providers.catalog(.openai, transport: .cli, cli: .signedOut)
+        XCTAssertFalse(signedOut.ready); XCTAssertTrue(signedOut.detail.hasPrefix("Run codex login"), signedOut.detail)
+        let missing = await Providers.catalog(.anthropic, transport: .cli, cli: .missing)
+        XCTAssertFalse(missing.ready); XCTAssertTrue(missing.detail.contains("Install the official Anthropic CLI"), missing.detail)
+    }
+
     func testImagesAndHistoryAreSentInStructuredStdin() throws {
         let image = try Attachment(name: "sample.png", mime: "image/png", data: Data([1, 2, 3]))
         let request = ChatRequest(provider: .anthropic, model: "claude-haiku-5-5", effort: .low, transport: .cli,

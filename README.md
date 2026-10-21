@@ -64,7 +64,7 @@ Open Settings to choose the provider, default model, effort, transport and short
 
 An explicit `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the launching environment takes precedence; normal Finder launches use Keychain. The app never writes those environment credentials to a file.
 
-For subscription login, run the command shown in Settings (`codex login` or `claude auth login`), choose **CLI login**, and refresh. Boltbar lets the official CLI manage its tokens.
+For subscription login, sign in once in Terminal with `codex login` or `claude auth login`. Settings → Connections shows whether each CLI is installed and signed in, and whether an API key is saved; **Automatic** uses the API key when there is one, otherwise the CLI. Boltbar lets the official CLI manage its tokens.
 
 | Transport | Streaming | Attachments | Model discovery |
 |---|---|---|---|
