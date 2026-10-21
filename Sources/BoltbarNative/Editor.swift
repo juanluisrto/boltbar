@@ -41,6 +41,7 @@ final class ComposerTextView: NSTextView {
     var onTab: ((Bool) -> Bool)?
     var onSelectChat: (() -> Bool)?
     var onCompleteCommand: (() -> Bool)?
+    var onTextSize: ((Int) -> Void)?
     override func mouseDown(with event: NSEvent) {
         _ = onEndModelSelection?(); super.mouseDown(with: event)
     }
@@ -60,6 +61,7 @@ final class ComposerTextView: NSTextView {
         // ⌘↵ allows and ⌥⌘↵ allows in this chat: never a bare Return, which is too easy to press twice.
         if event.keyCode == 36, flags.contains(.command), !event.isARepeat, onApprove?(flags.contains(.option)) == true { return }
         if flags.contains(.command), !flags.contains(.control), matches(agentShortcut(), event) { onToggleAgent?(); return }
+        if let step = TextSizeKey.step(event), let onTextSize { onTextSize(step); return }
         if flags == [.command, .shift], ["/", "?"].contains(event.charactersIgnoringModifiers) { onHelp?(); return }
         if flags.isEmpty, onPickerKey?(event.keyCode) == true { return }
         if flags.isEmpty, onAgentKey?(event.keyCode) == true { return }
@@ -171,6 +173,7 @@ struct GrowingEditor: NSViewRepresentable {
         text.onHelp = { model.showHelp() }
         text.onTab = { forward in model.switchChipSelection(forward: forward) }
         text.onSelectChat = { model.selectChat?() ?? false }
+        text.onTextSize = { model.stepTextSize($0) }
         text.onCompleteCommand = {
             let typed = model.draft.lowercased()
             guard let match = HelpContent.commands.first(where: { $0.command.hasPrefix(typed) }) else { return false }

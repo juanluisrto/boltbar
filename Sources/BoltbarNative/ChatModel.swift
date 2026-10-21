@@ -377,6 +377,13 @@ import SwiftUI
         }
     }
     func perform(_ action: NoticeAction) { notice = nil; noticeTask?.cancel(); action.run() }
+    /// ⌘+, ⌘− and ⌘0: the text of every chat, saved for next time.
+    func stepTextSize(_ step: Int) {
+        appearance.stepTextSize(step)
+        let size = Int(appearance.chatTextSize), sizes = AppearancePreferences.textSizes
+        let limit = size == Int(sizes.last!) && step > 0 ? ", the largest" : size == Int(sizes.first!) && step < 0 ? ", the smallest" : ""
+        show(notice: appearance.textSize == nil ? "Text size \(size) pt, the standard" : "Text size \(size) pt\(limit) · ⌘0 resets")
+    }
     func showHelp() { endModelSelection(); closeHistory(); showingHelp = true }
     func closeHelp() { showingHelp = false }
     func showHistory(preservingSearch: Bool = false) {

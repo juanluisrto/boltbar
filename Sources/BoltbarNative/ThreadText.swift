@@ -34,16 +34,23 @@ final class ThreadPiece {
     }
 }
 
-struct ThreadStyle {
+struct ThreadStyle: Equatable {
     let theme: ThemePalette
+    /// The sizes below are written for the standard text size; ⌘+ and ⌘− scale them all together.
+    let scale: CGFloat
+    init(theme: ThemePalette, textSize: Double = AppearancePreferences.standardTextSize) {
+        self.theme = theme; scale = CGFloat(textSize / AppearancePreferences.standardTextSize)
+    }
     var text: NSColor { theme.textNS }
     var secondary: NSColor { theme.textNS.withAlphaComponent(0.56) }
     var faint: NSColor { theme.textNS.withAlphaComponent(0.75) }
     var surface: NSColor { theme.textNS.withAlphaComponent(0.06) }
     var border: NSColor { theme.textNS.withAlphaComponent(0.12) }
     var accent: NSColor { theme.accentNS }
-    var body: NSFont { .systemFont(ofSize: 14) }
-    func mono(_ size: CGFloat, _ weight: NSFont.Weight = .regular) -> NSFont { .monospacedSystemFont(ofSize: size, weight: weight) }
+    var body: NSFont { system(14) }
+    func size(_ points: CGFloat) -> CGFloat { points * scale }
+    func system(_ points: CGFloat, _ weight: NSFont.Weight = .regular) -> NSFont { .systemFont(ofSize: size(points), weight: weight) }
+    func mono(_ points: CGFloat, _ weight: NSFont.Weight = .regular) -> NSFont { .monospacedSystemFont(ofSize: size(points), weight: weight) }
 }
 
 enum ThreadBuilder {
@@ -57,9 +64,9 @@ enum ThreadBuilder {
         let labelAttributes: Attributes = [.font: style.mono(9, .semibold), .kern: 1, .foregroundColor: style.secondary]
         let name = NSAttributedString(string: message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased(), attributes: labelAttributes)
         let labelStyle = NSMutableParagraphStyle()
-        labelStyle.minimumLineHeight = 22; labelStyle.maximumLineHeight = 22
-        labelStyle.paragraphSpacingBefore = first ? 6 : 22; labelStyle.paragraphSpacing = 5
-        labelStyle.tabStops = [NSTextTab(textAlignment: .left, location: ceil(name.size().width) + 36)]
+        labelStyle.minimumLineHeight = style.size(22); labelStyle.maximumLineHeight = style.size(22)
+        labelStyle.paragraphSpacingBefore = style.size(first ? 6 : 22); labelStyle.paragraphSpacing = style.size(5)
+        labelStyle.tabStops = [NSTextTab(textAlignment: .left, location: ceil(name.size().width) + style.size(36))]
         out.append(name)
         if message.interrupted == true { out.append(NSAttributedString(string: "\tINTERRUPTED", attributes: labelAttributes)) }
         out.append(NSAttributedString(string: "\n", attributes: labelAttributes))
@@ -101,25 +108,25 @@ enum ThreadBuilder {
     /// Paragraphs, headings, bullets and quotes, as MarkdownText draws them.
     static func lineText(_ line: String, _ style: ThreadStyle) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 3; paragraph.paragraphSpacing = 4
+        paragraph.lineSpacing = style.size(3); paragraph.paragraphSpacing = style.size(4)
         if line.isEmpty {
-            return terminated(NSAttributedString(string: ""), font: .systemFont(ofSize: 4), paragraph)
+            return terminated(NSAttributedString(string: ""), font: style.system(4), paragraph)
         }
         if let marker = line.range(of: "^#{1,6} ", options: .regularExpression) {
             let level = CGFloat(line.distance(from: line.startIndex, to: marker.upperBound))
-            let font = NSFont.systemFont(ofSize: max(15, 23 - level), weight: .semibold)
-            paragraph.paragraphSpacingBefore = 4
+            let font = style.system(max(15, 23 - level), .semibold)
+            paragraph.paragraphSpacingBefore = style.size(4)
             return terminated(inline(String(line[marker.upperBound...]), font: font, style: style), font: font, paragraph)
         }
         if line.hasPrefix("- ") || line.hasPrefix("* ") {
-            paragraph.firstLineHeadIndent = 4; paragraph.headIndent = 20
-            paragraph.tabStops = [NSTextTab(textAlignment: .left, location: 20)]
+            paragraph.firstLineHeadIndent = style.size(4); paragraph.headIndent = style.size(20)
+            paragraph.tabStops = [NSTextTab(textAlignment: .left, location: style.size(20))]
             let bullet = NSMutableAttributedString(string: "•\t", attributes: [.font: style.body, .foregroundColor: style.secondary])
             bullet.append(inline(String(line.dropFirst(2)), font: style.body, style: style))
             return terminated(bullet, font: style.body, paragraph)
         }
         if line.hasPrefix("> ") {
-            paragraph.firstLineHeadIndent = 12; paragraph.headIndent = 12
+            paragraph.firstLineHeadIndent = style.size(12); paragraph.headIndent = style.size(12)
             let quote = NSMutableAttributedString(attributedString: inline(String(line.dropFirst(2)), font: style.body, color: style.secondary, style: style))
             quote.addAttribute(.boltbarQuote, value: NSColor.gray.withAlphaComponent(0.5), range: NSRange(location: 0, length: quote.length))
             return terminated(quote, font: style.body, paragraph)
@@ -154,7 +161,7 @@ enum ThreadBuilder {
             if let intent = run.inlinePresentationIntent {
                 if intent.contains(.stronglyEmphasized) { runFont = NSFontManager.shared.convert(runFont, toHaveTrait: .boldFontMask) }
                 if intent.contains(.emphasized) { runFont = NSFontManager.shared.convert(runFont, toHaveTrait: .italicFontMask) }
-                if intent.contains(.code) { runFont = style.mono(max(10, runFont.pointSize - 1)); attributes[.backgroundColor] = style.surface }
+                if intent.contains(.code) { runFont = .monospacedSystemFont(ofSize: max(style.size(10), runFont.pointSize - style.size(1)), weight: .regular); attributes[.backgroundColor] = style.surface }
                 if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
             }
             attributes[.font] = runFont
@@ -169,8 +176,8 @@ enum ThreadBuilder {
 
     static func chip(_ label: String, link: URL, _ style: ThreadStyle) -> NSAttributedString {
         NSAttributedString(string: "\u{2009}\(label)\u{2009}", attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold), .foregroundColor: style.accent,
-            .backgroundColor: style.accent.withAlphaComponent(0.16), .baselineOffset: 1, .link: link, .toolTip: link.absoluteString,
+            .font: NSFont.monospacedDigitSystemFont(ofSize: style.size(11), weight: .semibold), .foregroundColor: style.accent,
+            .backgroundColor: style.accent.withAlphaComponent(0.16), .baselineOffset: style.size(1), .link: link, .toolTip: link.absoluteString,
         ])
     }
 
@@ -178,13 +185,13 @@ enum ThreadBuilder {
     static func codeBlock(_ block: MarkdownText.Block, _ style: ThreadStyle) -> NSAttributedString {
         func paragraph(before: CGFloat, after: CGFloat) -> NSParagraphStyle {
             let paragraph = NSMutableParagraphStyle()
-            paragraph.firstLineHeadIndent = 12; paragraph.headIndent = 12; paragraph.tailIndent = -12
-            paragraph.paragraphSpacingBefore = before; paragraph.paragraphSpacing = after
+            paragraph.firstLineHeadIndent = style.size(12); paragraph.headIndent = style.size(12); paragraph.tailIndent = -style.size(12)
+            paragraph.paragraphSpacingBefore = style.size(before); paragraph.paragraphSpacing = style.size(after)
             return paragraph
         }
         let out = NSMutableAttributedString(string: (block.language.isEmpty ? "Code" : block.language) + "\n",
                                             attributes: [.font: style.mono(10), .foregroundColor: style.secondary, .paragraphStyle: paragraph(before: 18, after: 6)])
-        let code = MarkdownText.highlightedNS(block.text, theme: style.theme)
+        let code = MarkdownText.highlightedNS(block.text, theme: style.theme, size: style.size(12))
         code.append(NSAttributedString(string: "\n", attributes: [.font: style.mono(12)]))
         code.addAttribute(.paragraphStyle, value: paragraph(before: 0, after: 0), range: NSRange(location: 0, length: code.length))
         let lastLine = (code.string as NSString).lineRange(for: NSRange(location: max(0, code.length - 1), length: 0))
@@ -195,7 +202,7 @@ enum ThreadBuilder {
     }
 
     static func tableText(_ table: MarkdownTable, _ style: ThreadStyle) -> NSAttributedString {
-        let out = NSMutableAttributedString(attributedString: spacer(6))
+        let out = NSMutableAttributedString(attributedString: spacer(style.size(6)))
         let textTable = NSTextTable()
         textTable.numberOfColumns = table.headers.count; textTable.collapsesBorders = true
         textTable.layoutAlgorithm = .automaticLayoutAlgorithm
@@ -203,7 +210,7 @@ enum ThreadBuilder {
             for (column, cell) in cells.enumerated() {
                 let block = NSTextTableBlock(table: textTable, startingRow: row, rowSpan: 1, startingColumn: column, columnSpan: 1)
                 block.setBorderColor(style.border); block.setWidth(1, type: .absoluteValueType, for: .border)
-                block.setWidth(7, type: .absoluteValueType, for: .padding)
+                block.setWidth(style.size(7), type: .absoluteValueType, for: .padding)
                 if row == 0 { block.backgroundColor = style.surface }
                 let paragraph = NSMutableParagraphStyle()
                 paragraph.textBlocks = [block]
@@ -212,14 +219,14 @@ enum ThreadBuilder {
                 case .center: paragraph.alignment = .center
                 case .trailing: paragraph.alignment = .right
                 }
-                let font = row == 0 ? NSFont.systemFont(ofSize: 13, weight: .semibold) : NSFont.systemFont(ofSize: 13)
+                let font = row == 0 ? style.system(13, .semibold) : style.system(13)
                 let text = NSMutableAttributedString(attributedString: inline(cell, font: font, style: style))
                 text.append(NSAttributedString(string: "\n", attributes: [.font: font]))
                 text.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: text.length))
                 out.append(text)
             }
         }
-        out.append(spacer(6))
+        out.append(spacer(style.size(6)))
         return out
     }
 
@@ -230,8 +237,8 @@ enum ThreadBuilder {
     static func stepLine(_ step: AgentStep, _ style: ThreadStyle) -> NSAttributedString {
         let font = style.mono(12)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.paragraphSpacing = 4; paragraph.headIndent = 22
-        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: 22)]
+        paragraph.paragraphSpacing = style.size(4); paragraph.headIndent = style.size(22)
+        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: style.size(22))]
         let (glyph, color): (String, NSColor) = {
             switch step.status {
             case .running: return ("◌", .clear)
@@ -240,7 +247,7 @@ enum ThreadBuilder {
             case .denied: return ("⊘", style.secondary)
             }
         }()
-        var glyphAttributes: Attributes = [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: color, .baselineOffset: -0.5]
+        var glyphAttributes: Attributes = [.font: style.system(13, .medium), .foregroundColor: color, .baselineOffset: -style.size(0.5)]
         if step.status == .running { glyphAttributes[.boltbarSpinner] = true }
         let out = NSMutableAttributedString(string: glyph, attributes: glyphAttributes)
         out.append(NSAttributedString(string: "\t", attributes: [.font: font]))
@@ -280,7 +287,7 @@ enum ThreadBuilder {
         }
         out.append(NSAttributedString(string: "\n", attributes: gap))
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 5; paragraph.paragraphSpacingBefore = 4
+        paragraph.lineSpacing = style.size(5); paragraph.paragraphSpacingBefore = style.size(4)
         out.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: out.length))
         return out
     }
@@ -290,7 +297,8 @@ enum ThreadBuilder {
         for item in items {
             if let image = item.image {
                 let attachment = NSTextAttachment()
-                let size = image.size.height > 0 ? NSSize(width: min(120, image.size.width * 64 / image.size.height), height: 64) : NSSize(width: 64, height: 64)
+                let height = style.size(64)
+                let size = image.size.height > 0 ? NSSize(width: min(style.size(120), image.size.width * height / image.size.height), height: height) : NSSize(width: height, height: height)
                 attachment.image = NSImage(size: size, flipped: false) { rect in
                     NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).addClip()
                     image.draw(in: rect); return true
@@ -299,10 +307,10 @@ enum ThreadBuilder {
                 out.append(NSAttributedString(attachment: attachment))
             } else {
                 let symbol = NSImage(systemSymbolName: item.isPDF ? "doc.richtext" : "doc.text", accessibilityDescription: nil)?
-                    .withSymbolConfiguration(.init(pointSize: 13, weight: .regular).applying(.init(paletteColors: [style.accent])))
+                    .withSymbolConfiguration(.init(pointSize: style.size(13), weight: .regular).applying(.init(paletteColors: [style.accent])))
                 if let symbol {
                     let attachment = NSTextAttachment(); attachment.image = symbol
-                    attachment.bounds = NSRect(x: 0, y: -2, width: symbol.size.width, height: symbol.size.height)
+                    attachment.bounds = NSRect(x: 0, y: -style.size(2), width: symbol.size.width, height: symbol.size.height)
                     out.append(NSAttributedString(attachment: attachment))
                 }
                 out.append(NSAttributedString(string: " " + item.name, attributes: [.font: style.mono(11, .medium), .foregroundColor: style.text]))
@@ -313,7 +321,7 @@ enum ThreadBuilder {
         }
         out.append(NSAttributedString(string: "\n", attributes: [.font: style.body]))
         let paragraph = NSMutableParagraphStyle()
-        paragraph.paragraphSpacing = 6
+        paragraph.paragraphSpacing = style.size(6)
         out.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: out.length))
         return out
     }
@@ -357,6 +365,7 @@ final class ThreadTextView: NSTextView {
     var onHover: ((NSPoint?) -> Void)?
     var onEscape: (() -> Void)?
     var onType: ((NSEvent) -> Void)?
+    var onTextSize: ((Int) -> Void)?
     private var tracking: NSTrackingArea?
     /// Exactly as wide as what you see, so every line wraps at the bar's edge. Autoresizing alone keeps
     /// the width the view was made with and only adds the clip view's growth, which cut off whole replies.
@@ -374,6 +383,7 @@ final class ThreadTextView: NSTextView {
     /// Typing while the chat has focus goes to the message field; Esc goes back to it.
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { onEscape?(); return }
+        if let step = TextSizeKey.step(event), let onTextSize { onTextSize(step); return }
         let navigation: Set<UInt16> = [115, 116, 119, 121, 123, 124, 125, 126]
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty, !navigation.contains(event.keyCode),
            let characters = event.characters, !characters.isEmpty {
@@ -412,7 +422,7 @@ struct ChatThread: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        context.coordinator.update(messages: model.messages, theme: theme, revision: model.threadRevision)
+        context.coordinator.update(messages: model.messages, theme: theme, textSize: model.appearance.chatTextSize, revision: model.threadRevision)
     }
 
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -421,7 +431,7 @@ struct ChatThread: NSViewRepresentable {
         private(set) weak var text: ThreadTextView?
         private(set) var pieces: [ThreadPiece] = []
         private var cache: [UUID: ThreadPiece] = [:]
-        private var theme: ThemePalette?
+        private var style: ThreadStyle?
         private var revision = -1, count = 0
         private(set) var following = true
         private let copyMessage = CopyOverlay(), copyCode = CopyOverlay()
@@ -433,6 +443,7 @@ struct ChatThread: NSViewRepresentable {
             text.delegate = self
             text.addSubview(copyMessage.button); text.addSubview(copyCode.button)
             text.onHover = { [weak self] point in self?.hover(point) }
+            text.onTextSize = { [weak self] step in self?.model.stepTextSize(step) }
             text.onEscape = { [weak self, weak text] in
                 text?.setSelectedRange(NSRange(location: 0, length: 0)); self?.model.focusComposer?()
             }
@@ -450,11 +461,12 @@ struct ChatThread: NSViewRepresentable {
             NotificationCenter.default.addObserver(self, selector: #selector(resized), name: NSView.frameDidChangeNotification, object: text)
         }
 
-        func update(messages: [Message], theme: ThemePalette, revision: Int) {
+        func update(messages: [Message], theme: ThemePalette, textSize: Double = AppearancePreferences.standardTextSize, revision: Int) {
             guard let text, let storage = text.textStorage, let layout = text.layoutManager, let container = text.textContainer else { return }
-            let style = ThreadStyle(theme: theme)
-            if theme != self.theme {
-                self.theme = theme; cache = [:]; pieces = []
+            let style = ThreadStyle(theme: theme, textSize: textSize)
+            // A new theme or text size redraws every message.
+            if style != self.style {
+                self.style = style; cache = [:]; pieces = []
                 storage.setAttributedString(NSAttributedString())
                 text.selectedTextAttributes = [.backgroundColor: theme.accentNS.withAlphaComponent(0.25)]
                 copyMessage.colors(style.secondary, copied: style.accent); copyCode.colors(style.secondary, copied: style.accent)
@@ -500,7 +512,7 @@ struct ChatThread: NSViewRepresentable {
         /// Shows the copy buttons for what's under the pointer: the message's, beside its name, and a code block's.
         func hover(_ point: NSPoint?) {
             lastHover = point
-            guard let point, let text, let layout = text.layoutManager, let container = text.textContainer,
+            guard let point, let text, let layout = text.layoutManager, let container = text.textContainer, let style,
                   let storage = text.textStorage, storage.length > 0 else { copyMessage.hide(); copyCode.hide(); return }
             let origin = text.textContainerOrigin
             let index = layout.characterIndex(for: NSPoint(x: point.x - origin.x, y: point.y - origin.y), in: container, fractionOfDistanceBetweenInsertionPoints: nil)
@@ -514,7 +526,7 @@ struct ChatThread: NSViewRepresentable {
                         // The name sits at the bottom of a 22 pt line: centre the icon on its capitals, not on the line.
                         let glyph = layout.glyphIndexForCharacter(at: labelRange.location)
                         let baseline = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY + layout.location(forGlyphAt: glyph).y
-                        let middle = baseline - NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold).capHeight / 2
+                        let middle = baseline - style.mono(9, .semibold).capHeight / 2
                         copyMessage.show(piece: piece, text: piece.message.text, label: piece.message.role == .user ? "Copy message" : "Copy response",
                                          at: NSPoint(x: origin.x + label.maxX + 6, y: origin.y + middle - CopyOverlay.size.height / 2))
                     } else { copyMessage.hide() }

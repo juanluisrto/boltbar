@@ -26,6 +26,17 @@ struct AppearancePreferences: Codable, Equatable {
     var lightTheme: ThemeName = .paper
     var darkTheme: ThemeName = .graphite
     var customAccent: String?
+    /// The chat's text size in points, for every chat; nil is the standard size.
+    var textSize: Double?
+    static let standardTextSize = 14.0
+    static let textSizes: [Double] = [11, 12, 13, 14, 15, 16, 18, 20, 22, 24]
+    var chatTextSize: Double { textSize ?? Self.standardTextSize }
+    /// ⌘+ and ⌘− move one size up or down; 0, as ⌘0, goes back to the standard size.
+    mutating func stepTextSize(_ step: Int) {
+        let next = step == 0 ? Self.standardTextSize
+            : step > 0 ? Self.textSizes.first { $0 > chatTextSize } ?? chatTextSize : Self.textSizes.last { $0 < chatTextSize } ?? chatTextSize
+        textSize = next == Self.standardTextSize ? nil : next
+    }
     mutating func selectTheme(_ theme: ThemeName) {
         if theme.isDark { darkTheme = theme; mode = .dark }
         else { lightTheme = theme; mode = .light }
@@ -37,6 +48,19 @@ struct AppearancePreferences: Codable, Equatable {
         var theme = chosen.palette
         if let customAccent, let color = NSColor(hex: customAccent) { theme.accentNS = color }
         return theme
+    }
+}
+
+/// The text-size keys: ⌘+ (also ⌘=, the same key unshifted), ⌘− and ⌘0.
+enum TextSizeKey {
+    static func step(_ event: NSEvent) -> Int? {
+        guard event.modifierFlags.intersection([.command, .control, .option]) == .command else { return nil }
+        switch event.charactersIgnoringModifiers {
+        case "+", "=": return 1
+        case "-": return -1
+        case "0": return 0
+        default: return nil
+        }
     }
 }
 

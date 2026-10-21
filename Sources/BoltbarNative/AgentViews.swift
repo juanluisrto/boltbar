@@ -300,6 +300,8 @@ enum HelpContent {
         | ⌘ N | New chat |
         | ⌘ , | Settings |
         | ⌘ ? | This help, also /help |
+        | ⌘ + / ⌘ − | Bigger or smaller text, in every chat |
+        | ⌘ 0 | Text back to its standard size |
 
         ## Models and effort
         With an empty message, ↑ ↓ switch model and outline its chip. While outlined, ← → set the thinking effort. Click the chip for the full list.

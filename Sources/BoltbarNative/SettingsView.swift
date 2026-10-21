@@ -84,7 +84,21 @@ struct SettingsView: View {
                 if model.appearance.customAccent != nil {
                     Button("Use theme accent") { model.appearance.customAccent = nil }
                 }
-                Text("System switches between your preferred light and dark themes automatically.")
+                HStack(spacing: 8) {
+                    Text("Text size")
+                    Spacer()
+                    Button { model.appearance.stepTextSize(-1) } label: { Image(systemName: "minus").frame(width: 12, height: 12) }
+                        .buttonStyle(InterfaceButtonStyle()).disabled(model.appearance.chatTextSize <= AppearancePreferences.textSizes.first!)
+                        .accessibilityLabel("Smaller text").help("Smaller text · ⌘−")
+                    Text("\(Int(model.appearance.chatTextSize)) pt").monospacedDigit().frame(minWidth: 46)
+                    Button { model.appearance.stepTextSize(1) } label: { Image(systemName: "plus").frame(width: 12, height: 12) }
+                        .buttonStyle(InterfaceButtonStyle()).disabled(model.appearance.chatTextSize >= AppearancePreferences.textSizes.last!)
+                        .accessibilityLabel("Bigger text").help("Bigger text · ⌘+")
+                }
+                if model.appearance.textSize != nil {
+                    Button("Use standard size") { model.appearance.stepTextSize(0) }
+                }
+                Text("System switches between your preferred light and dark themes automatically. Text size applies to every chat; in the bar ⌘+ and ⌘− change it and ⌘0 resets it.")
                     .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -244,6 +258,8 @@ struct AgentSettingsView: View {
 /// Records an in-app shortcut: ⌘ plus a key, optionally with ⇧ or ⌥, avoiding the ones Boltbar already uses.
 final class AgentShortcutButton: NSButton {
     static let reserved: Set<String> = ["a", "c", "v", "x", "z", "n", ",", "q", "w", "h", "m", "/"]
+    /// The text-size keys, taken with or without ⇧.
+    static let textSize: Set<String> = ["+", "=", "-", "0"]
     var record: ((AgentShortcut) -> Void)?
     var recording = false
     override var acceptsFirstResponder: Bool { true }
@@ -256,7 +272,7 @@ final class AgentShortcutButton: NSButton {
             title = "Use ⌘ with a key"; return
         }
         let shortcut = AgentShortcut(key: key, shift: flags.contains(.shift), option: flags.contains(.option))
-        if !shortcut.shift && !shortcut.option && Self.reserved.contains(key) { title = "Used by Boltbar"; return }
+        if !shortcut.shift && !shortcut.option && Self.reserved.contains(key) || !shortcut.option && Self.textSize.contains(key) { title = "Used by Boltbar"; return }
         record?(shortcut); title = shortcut.label; recording = false
     }
 }

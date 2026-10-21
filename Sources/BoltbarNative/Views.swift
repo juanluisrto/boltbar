@@ -388,8 +388,8 @@ struct MarkdownText: View {
     static func highlighted(_ source: String, theme: ThemePalette = ThemeName.graphite.palette) -> AttributedString {
         AttributedString(highlightedNS(source, theme: theme))
     }
-    static func highlightedNS(_ source: String, theme: ThemePalette = ThemeName.graphite.palette) -> NSMutableAttributedString {
-        let result = NSMutableAttributedString(string: source, attributes: [.foregroundColor: theme.textNS, .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
+    static func highlightedNS(_ source: String, theme: ThemePalette = ThemeName.graphite.palette, size: CGFloat = 12) -> NSMutableAttributedString {
+        let result = NSMutableAttributedString(string: source, attributes: [.foregroundColor: theme.textNS, .font: NSFont.monospacedSystemFont(ofSize: size, weight: .regular)])
         let rules: [(String, NSColor)] = [
             (#"\b(let|var|func|fn|struct|class|enum|import|use|return|if|else|for|while|async|await|def|const|function|true|false|nil|null|public|private|static|throw|try)\b"#, NSColor(hex: theme.dark ? "C6A0E8" : "7651A8")!),
             (#"\b[0-9]+(?:\.[0-9]+)?\b"#, NSColor(hex: theme.dark ? "E5BB88" : "986020")!),

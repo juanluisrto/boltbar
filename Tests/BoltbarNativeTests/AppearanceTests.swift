@@ -56,6 +56,51 @@ final class AppearanceTests: XCTestCase {
         model.appearance.darkTheme = .midnight; model.appearance.customAccent = "5638AA"
         XCTAssertEqual(ChatModel(defaults: defaults).appearance, model.appearance)
     }
+    func testTextSizeStepsThroughItsSizesAndOlderSettingsKeepTheirTheme() throws {
+        var preferences = AppearancePreferences()
+        XCTAssertNil(preferences.textSize); XCTAssertEqual(preferences.chatTextSize, 14)
+        preferences.stepTextSize(1); XCTAssertEqual(preferences.textSize, 15)
+        preferences.stepTextSize(-1); XCTAssertNil(preferences.textSize, "Back at 14 it is the standard size again")
+        for _ in 0..<20 { preferences.stepTextSize(1) }
+        XCTAssertEqual(preferences.chatTextSize, 24, "It stops at the largest size")
+        for _ in 0..<20 { preferences.stepTextSize(-1) }
+        XCTAssertEqual(preferences.chatTextSize, 11, "And at the smallest")
+        preferences.stepTextSize(0); XCTAssertNil(preferences.textSize)
+        let saved = try JSONDecoder().decode(AppearancePreferences.self, from: Data(#"{"mode":"light","lightTheme":"mist","darkTheme":"midnight"}"#.utf8))
+        XCTAssertEqual(saved.lightTheme, .mist, "Settings saved before text size still load")
+        XCTAssertEqual(saved.chatTextSize, 14)
+    }
+    @MainActor func testTextSizeKeysChangeEveryChatAndAreRemembered() throws {
+        let suite = "com.boltbar.tests.textsize.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = ChatModel(defaults: defaults)
+        func event(_ characters: String, _ flags: NSEvent.ModifierFlags = .command) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                             characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: 0)!
+        }
+        let composer = ComposerTextView(frame: .zero)
+        var steps: [Int] = []
+        composer.onTextSize = { steps.append($0) }
+        for (characters, flags) in [("=", NSEvent.ModifierFlags.command), ("+", [.command, .shift]), ("-", .command), ("0", .command),
+                                    ("0", [.command, .option]), ("=", [.command, .control])] {
+            composer.keyDown(with: event(characters, flags))
+        }
+        XCTAssertEqual(steps, [1, 1, -1, 0], "⌘= and ⌘+ go up, ⌘− down, ⌘0 resets; other modifiers are left alone")
+
+        // In the chat itself, after ⌘A for instance, the same keys work.
+        let coordinator = ChatThread.Coordinator(model: model)
+        _ = ChatThread.makeScrollView(coordinator)
+        let thread = try XCTUnwrap(coordinator.text)
+        thread.keyDown(with: event("=")); thread.keyDown(with: event("+", [.command, .shift]))
+        XCTAssertEqual(model.appearance.chatTextSize, 16)
+        XCTAssertEqual(model.notice?.text, "Text size 16 pt · ⌘0 resets")
+        XCTAssertEqual(ChatModel(defaults: defaults).appearance.chatTextSize, 16, "Remembered after a restart")
+        thread.keyDown(with: event("0"))
+        XCTAssertNil(ChatModel(defaults: defaults).appearance.textSize)
+        XCTAssertEqual(model.notice?.text, "Text size 14 pt, the standard")
+        XCTAssertTrue(AgentShortcutButton.textSize.isSuperset(of: ["+", "=", "-", "0"]), "The agent shortcut can't take them")
+    }
     func testLegacyCursorConversationRemainsReadable() throws {
         let record = Conversation(summary: ConversationSummary(id: UUID(), title: "Old chat", createdAt: Date(), updatedAt: Date()),
                                   messages: [Message(role: .assistant, text: "Original response", author: "Cursor")],

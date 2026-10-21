@@ -52,6 +52,25 @@ import XCTest
         XCTAssertLessThanOrEqual(widest, visible, "No line runs past the edge, a table's cells included")
     }
 
+    func testTheTextSizeScalesEveryPartOfTheThread() throws {
+        let coordinator = ChatThread.Coordinator(model: makeModel())
+        let scroll = ChatThread.makeScrollView(coordinator)
+        scroll.frame = NSRect(x: 0, y: 0, width: 500, height: 600)
+        let messages = [Message(role: .user, text: "Hi"),
+                        Message(role: .assistant, text: "Body text\n\n```swift\nlet x = 1\n```\n\n| A | B |\n|---|---|\n| cell | 2 |", author: "OpenAI",
+                                steps: [AgentStep(id: "s", kind: .command, title: "$ swift build", status: .done, at: 0)])]
+        let text = try XCTUnwrap(coordinator.text)
+        func size(_ substring: String) -> CGFloat? {
+            (text.textStorage?.attribute(.font, at: (text.string as NSString).range(of: substring).location, effectiveRange: nil) as? NSFont)?.pointSize
+        }
+        coordinator.update(messages: messages, theme: theme, revision: 0)
+        XCTAssertEqual(size("Body text"), 14); XCTAssertEqual(size("let x"), 12); XCTAssertEqual(size("$ swift"), 12)
+        XCTAssertEqual(size("cell"), 13); XCTAssertEqual(size("OPENAI"), 9)
+        coordinator.update(messages: messages, theme: theme, textSize: 21, revision: 0)
+        XCTAssertEqual(size("Body text"), 21, "Every message is redrawn at the new size")
+        XCTAssertEqual(size("let x"), 18); XCTAssertEqual(size("$ swift"), 18); XCTAssertEqual(size("cell"), 19.5); XCTAssertEqual(size("OPENAI"), 13.5)
+    }
+
     func testCopyButtonsAppearBesideTheNameAndOnCodeBlocks() throws {
         let coordinator = ChatThread.Coordinator(model: makeModel())
         let scroll = ChatThread.makeScrollView(coordinator)
