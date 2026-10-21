@@ -66,6 +66,10 @@ struct MessageRow: View, Equatable {
                 HStack(spacing: 8) {
                     Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
                         .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
+                    // Beside the name, on hover, for your messages and replies alike.
+                    if !message.text.isEmpty {
+                        CopyIconButton(text: message.text, label: message.role == .user ? "Copy message" : "Copy response", visible: hovering)
+                    }
                     if message.interrupted == true {
                         Text("INTERRUPTED").font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1)
                             .padding(.horizontal, 5).padding(.vertical, 2)
@@ -93,14 +97,7 @@ struct MessageRow: View, Equatable {
                         Text("Stopped before the reply began.").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary)
                     }
                 }
-            }.padding(.top, 6)
-            // The gap under a message holds its copy button, shown while the pointer is over the message or the gap.
-            HStack {
-                if message.role == .assistant, !message.text.isEmpty {
-                    CopyIconButton(text: message.text, label: "Copy response", visible: hovering)
-                }
-                Spacer()
-            }.frame(height: 24)
+            }.padding(.vertical, 6)
         }.frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle()).onHover { hovering = $0 }
     }
@@ -240,7 +237,7 @@ struct ChatBar: View {
             } else if !model.messages.isEmpty {
                 ScrollViewReader { reader in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 12) {
                             ForEach(model.messages) { MessageRow(message: $0).equatable() }
                             Color.clear.frame(height: 1).id("bottom")
                         }.frame(maxWidth: .infinity, alignment: .leading)
