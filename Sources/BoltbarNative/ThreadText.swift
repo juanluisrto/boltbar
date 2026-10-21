@@ -358,6 +358,11 @@ final class ThreadTextView: NSTextView {
     var onEscape: (() -> Void)?
     var onType: ((NSEvent) -> Void)?
     private var tracking: NSTrackingArea?
+    /// Exactly as wide as what you see, so every line wraps at the bar's edge. Autoresizing alone keeps
+    /// the width the view was made with and only adds the clip view's growth, which cut off whole replies.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(NSSize(width: (superview as? NSClipView)?.bounds.width ?? newSize.width, height: newSize.height))
+    }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }

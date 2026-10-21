@@ -28,6 +28,30 @@ import XCTest
         XCTAssertTrue(ThreadBuilder.piece(stopped, first: false, style: ThreadStyle(theme: theme)).text.string.contains("INTERRUPTED"))
     }
 
+    func testTextWrapsWhereTheBarEndsAndWideTablesFitInside() throws {
+        let coordinator = ChatThread.Coordinator(model: makeModel())
+        let scroll = ChatThread.makeScrollView(coordinator)
+        let text = try XCTUnwrap(coordinator.text)
+        // In the bar AppKit doesn't keep the text in step with its clip view; only autoresizing runs, which keeps
+        // the width the text was made with and adds the clip's growth. Without the clip's frame notifications it's the same here.
+        scroll.contentView.postsFrameChangedNotifications = false
+        text.frame.size.width = 600
+        scroll.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
+        let table = "| " + (1...8).map { "Column \($0)" }.joined(separator: " | ") + " |\n|" + String(repeating: "---|", count: 8) + "\n| "
+            + (1...8).map { _ in "`Sources/BoltbarNative/ThreadText.swift`" }.joined(separator: " | ") + " |"
+        let reply = "Here:\n\n\(table)\n\nAfter the table, a paragraph long enough to need several lines still wraps where the bar ends.\n\n"
+            + "- A list item long enough to wrap onto a second line\n\n> A quote that is also long enough to wrap onto another line\n\n```\nlet line = \"\(String(repeating: "x", count: 120))\"\n```"
+        coordinator.update(messages: [Message(role: .user, text: "Compare them"), Message(role: .assistant, text: reply, author: "OpenAI")], theme: theme, revision: 0)
+        scroll.frame.size.width = 900; scroll.frame.size.width = 500
+        let layout = try XCTUnwrap(text.layoutManager), container = try XCTUnwrap(text.textContainer)
+        layout.ensureLayout(for: container)
+        let visible = scroll.contentView.bounds.width
+        XCTAssertEqual(text.frame.width, visible, "The text is exactly as wide as what you see")
+        var widest: CGFloat = 0
+        layout.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: layout.numberOfGlyphs)) { _, used, _, _, _ in widest = max(widest, used.maxX) }
+        XCTAssertLessThanOrEqual(widest, visible, "No line runs past the edge, a table's cells included")
+    }
+
     func testCopyButtonsAppearBesideTheNameAndOnCodeBlocks() throws {
         let coordinator = ChatThread.Coordinator(model: makeModel())
         let scroll = ChatThread.makeScrollView(coordinator)
