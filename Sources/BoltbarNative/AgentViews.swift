@@ -213,34 +213,6 @@ struct ToolRoll: View {
 
 // MARK: - Steps and approvals
 
-/// One line per action, so the model's own words stay the main thing.
-struct AgentStepList: View {
-    @Environment(\.boltbarTheme) private var theme
-    let steps: [AgentStep]
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(steps) { step in
-                HStack(spacing: 8) {
-                    icon(step).frame(width: 14)
-                    Text(step.title).lineLimit(1).truncationMode(.middle).strikethrough(step.status == .denied)
-                        .foregroundStyle(step.status == .running ? theme.text : theme.text.opacity(0.75))
-                    if let detail = step.status == .denied ? "declined" : step.detail {
-                        Text(detail).foregroundStyle(.secondary)
-                    }
-                }.font(.system(size: 12, design: .monospaced))
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading)
-    }
-    @ViewBuilder private func icon(_ step: AgentStep) -> some View {
-        switch step.status {
-        case .running: ProgressView().controlSize(.mini)
-        case .done: Image(systemName: step.kind == .edit ? "pencil" : "checkmark").foregroundStyle(.secondary)
-        case .failed: Image(systemName: "xmark").foregroundStyle(theme.error)
-        case .denied: Image(systemName: "nosign").foregroundStyle(.secondary)
-        }
-    }
-}
-
 /// Inline, in the queue's place: never a modal, and never answered by a stray Return.
 struct ApprovalCard: View {
     @Environment(\.boltbarTheme) private var theme

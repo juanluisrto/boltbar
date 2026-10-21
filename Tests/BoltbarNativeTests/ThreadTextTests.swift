@@ -1,0 +1,88 @@
+import AppKit
+import XCTest
+@testable import BoltbarNative
+
+@MainActor final class ThreadTextTests: XCTestCase {
+    private let theme = ThemeName.graphite.palette
+    private func makeModel() -> ChatModel { ChatModel(defaults: UserDefaults(suiteName: "com.boltbar.tests.thread.\(UUID())")!) }
+
+    func testAReplyReadsInOrderWithItsParts() throws {
+        let text = "Let me look.\n\nUse `make` and see [App.swift](Sources/App.swift), **done**.\n\n```swift\nlet x = 1\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+        let message = Message(role: .assistant, text: text, author: "Anthropic",
+                              steps: [AgentStep(id: "s", kind: .command, title: "$ swift build", status: .done, at: 12)])
+        let piece = ThreadBuilder.piece(message, first: true, style: ThreadStyle(theme: theme))
+        let string = piece.text.string as NSString
+        XCTAssertTrue((string as String).hasPrefix("ANTHROPIC\n"))
+        XCTAssertEqual(string.substring(with: piece.label), "ANTHROPIC")
+        let look = string.range(of: "Let me look."), step = string.range(of: "$ swift build"), use = string.range(of: "Use make")
+        XCTAssertTrue(look.upperBound <= step.location && step.upperBound <= use.location, "Steps sit between the words around them")
+        XCTAssertEqual(piece.codeBlocks.map(\.source), ["let x = 1"])
+        XCTAssertNotNil(piece.text.attribute(.boltbarCode, at: piece.codeBlocks[0].range.location, effectiveRange: nil))
+        let link = string.range(of: "App.swift")
+        XCTAssertEqual((piece.text.attribute(.link, at: link.location, effectiveRange: nil) as? URL)?.relativeString, "Sources/App.swift")
+        let bold = try XCTUnwrap(piece.text.attribute(.font, at: string.range(of: "done").location, effectiveRange: nil) as? NSFont)
+        XCTAssertTrue(bold.fontDescriptor.symbolicTraits.contains(.bold))
+        XCTAssertTrue((string as String).contains("A\nB\n1\n2\n"), "Table cells are text you can select")
+
+        let stopped = Message(role: .assistant, text: "", pending: false, author: "OpenAI", interrupted: true)
+        XCTAssertTrue(ThreadBuilder.piece(stopped, first: false, style: ThreadStyle(theme: theme)).text.string.contains("INTERRUPTED"))
+    }
+
+    func testCopyButtonsAppearBesideTheNameAndOnCodeBlocks() throws {
+        let coordinator = ChatThread.Coordinator(model: makeModel())
+        let scroll = ChatThread.makeScrollView(coordinator)
+        scroll.frame = NSRect(x: 0, y: 0, width: 500, height: 600)
+        coordinator.update(messages: [Message(role: .user, text: "Hi"),
+                                      Message(role: .assistant, text: "Here:\n\n```swift\nlet x = 1\n```", author: "OpenAI")], theme: theme, revision: 0)
+        let text = try XCTUnwrap(coordinator.text)
+        let layout = try XCTUnwrap(text.layoutManager), container = try XCTUnwrap(text.textContainer)
+        func point(of substring: String) -> NSPoint {
+            let range = (text.string as NSString).range(of: substring)
+            let rect = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
+            return NSPoint(x: rect.midX, y: rect.midY)
+        }
+        let (message, code) = coordinator.copyButtons
+        coordinator.hover(point(of: "Hi"))
+        XCTAssertFalse(message.isHidden, "Your own messages can be copied too")
+        XCTAssertTrue(code.isHidden)
+        let you = point(of: "YOU")
+        XCTAssertGreaterThan(message.frame.minX, you.x); XCTAssertLessThan(abs(message.frame.midY - you.y), 4, "Beside the name")
+        coordinator.hover(point(of: "let x = 1"))
+        XCTAssertFalse(code.isHidden, "A code block shows its own copy button")
+        XCTAssertGreaterThan(code.frame.minX, 400)
+        coordinator.hover(nil)
+        XCTAssertTrue(message.isHidden && code.isHidden)
+    }
+
+    func testTheChatIsOneSelectableTextThatFollowsTheEnd() throws {
+        let model = makeModel()
+        let coordinator = ChatThread.Coordinator(model: model)
+        let scroll = ChatThread.makeScrollView(coordinator)
+        scroll.frame = NSRect(x: 0, y: 0, width: 500, height: 120)
+        var messages = [Message(role: .user, text: "Hello"),
+                        Message(role: .assistant, text: (1...40).map { "Line \($0)" }.joined(separator: "\n\n"), author: "OpenAI")]
+        coordinator.update(messages: messages, theme: theme, revision: 0)
+        let text = try XCTUnwrap(coordinator.text)
+        XCTAssertTrue(text.string.hasPrefix("YOU\nHello\nOPENAI\n"))
+
+        XCTAssertEqual(model.selectChat?(), true)
+        XCTAssertEqual(text.selectedRange(), NSRange(location: 0, length: (text.string as NSString).length), "⌘A takes the whole chat")
+
+        let first = coordinator.pieces[0]
+        messages[1].text += "\n\nMore"
+        coordinator.update(messages: messages, theme: theme, revision: 0)
+        XCTAssertTrue(coordinator.pieces[0] === first, "Streaming rebuilds only the reply it lands in")
+        XCTAssertTrue(text.string.hasSuffix("More\n"))
+
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let clip = scroll.contentView
+        clip.scroll(to: .zero); scroll.reflectScrolledClipView(clip)
+        XCTAssertFalse(coordinator.following, "Scrolling up stops following the reply")
+        clip.scroll(to: NSPoint(x: 0, y: text.frame.height - clip.bounds.height)); scroll.reflectScrolledClipView(clip)
+        XCTAssertTrue(coordinator.following, "Back at the end, it follows again")
+
+        coordinator.update(messages: [], theme: theme, revision: 1)
+        XCTAssertEqual(text.string, "")
+        XCTAssertEqual(model.selectChat?(), false, "Nothing to select in an empty chat")
+    }
+}

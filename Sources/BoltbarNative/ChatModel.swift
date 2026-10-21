@@ -71,6 +71,8 @@ import SwiftUI
     @Published private(set) var agentSession: AgentSession? { didSet { if agentSession != oldValue { conversationDirty = true } } }
     /// A short confirmation above the toolbar, cleared after a few seconds.
     @Published var notice: String?
+    /// Selects the whole chat in its text view; set by the thread. False when there's nothing to select.
+    var selectChat: (() -> Bool)?
     private var noticeTask: Task<Void, Never>?
     @Published var showingHelp = false
     @Published var error: String?

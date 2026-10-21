@@ -5,10 +5,6 @@ private struct SizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
-private struct ThreadHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
 
 struct AttachmentTile: View {
     @Environment(\.boltbarTheme) private var theme
@@ -51,55 +47,6 @@ struct AttachmentStrip: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) { ForEach(items) { item in AttachmentTile(attachment: item, remove: remove.map { action in { action(item.id) } }) } }.padding(4)
         }.frame(height: 74)
-    }
-}
-
-/// Equatable, so a streamed word redraws only the reply it lands in, not every message above it.
-struct MessageRow: View, Equatable {
-    @Environment(\.boltbarTheme) private var theme
-    let message: Message
-    @State private var hovering = false
-    static func == (a: MessageRow, b: MessageRow) -> Bool { a.message.sameContent(as: b.message) }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 8) {
-                    Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
-                    // Beside the name, on hover, for your messages and replies alike.
-                    if !message.text.isEmpty {
-                        CopyIconButton(text: message.text, label: message.role == .user ? "Copy message" : "Copy response", visible: hovering)
-                    }
-                    if message.interrupted == true {
-                        Text("INTERRUPTED").font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1)
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.text.opacity(0.25), lineWidth: 1))
-                            .foregroundStyle(.secondary).help("Stopped before it finished; the partial reply stays in the context")
-                    }
-                    Spacer()
-                }.frame(height: 22)
-                if !message.attachments.isEmpty { AttachmentStrip(items: message.attachments) }
-                // An agent's steps sit between the words written before and after them.
-                ForEach(Array(MessageSegment.split(message.text, steps: message.steps ?? []).enumerated()), id: \.offset) { _, segment in
-                    switch segment {
-                    case .text(let text): MarkdownText(source: text)
-                    case .steps(let steps): AgentStepList(steps: steps)
-                    }
-                }
-                if message.role == .assistant, !message.text.isEmpty {
-                    let sources = InlineMarkdown.sources(message.text)
-                    if !sources.isEmpty { SourcesLine(sources: sources).padding(.top, 2) }
-                }
-                if message.text.isEmpty {
-                    if message.pending {
-                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text(message.activity ?? "Thinking…").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary) }
-                    } else if message.interrupted == true, message.steps?.isEmpty ?? true {
-                        Text("Stopped before the reply began.").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary)
-                    }
-                }
-            }.padding(.vertical, 6)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle()).onHover { hovering = $0 }
     }
 }
 
@@ -223,8 +170,6 @@ struct ChatBar: View {
     @Environment(\.boltbarTheme) private var theme
     private var accent: Color { theme.accent }
     @ObservedObject var model: ChatModel
-    @State private var followsStream = true
-    @State private var legacyScroller = NSScroller.preferredScrollerStyle == .legacy
     var body: some View {
         VStack(spacing: 10) {
             PanelMoveArea().frame(height: 12)
@@ -235,37 +180,9 @@ struct ChatBar: View {
                 HelpPane(model: model)
                 Rectangle().fill(theme.border).frame(height: 1)
             } else if !model.messages.isEmpty {
-                ScrollViewReader { reader in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            ForEach(model.messages) { MessageRow(message: $0).equatable() }
-                            Color.clear.frame(height: 1).id("bottom")
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                            // A legacy scroller (shown with a mouse attached) takes room
-                            // inside the view; keep copy buttons and text clear of it.
-                            .padding(.trailing, legacyScroller ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) + 4 : 0)
-                            .background(GeometryReader { Color.clear.preference(key: ThreadHeightKey.self, value: $0.size.height) })
-                            .background(ChatScrollObserver { followsStream = $0 })
-                    }.frame(height: model.manualThreadHeight ?? min(330, max(44, model.threadHeight)))
-                        .onPreferenceChange(ThreadHeightKey.self) { height in
-                            if abs(model.threadHeight - height) > 0.5 { model.threadHeight = height }
-                        }
-                        // Links to files open in their default app instead of failing as web addresses.
-                        .environment(\.openURL, OpenURLAction { url in model.openLink(url) ? .handled : .systemAction })
-                        .onChange(of: model.messages.last?.text) { _ in
-                            if followsStream { reader.scrollTo("bottom", anchor: .bottom) }
-                        }
-                        .onChange(of: model.messages.count) { _ in
-                            followsStream = true
-                            reader.scrollTo("bottom", anchor: .bottom)
-                        }
-                        // A chat opened from history starts at its end, like one you were just in.
-                        .onChange(of: model.threadRevision) { _ in
-                            followsStream = true
-                            DispatchQueue.main.async { reader.scrollTo("bottom", anchor: .bottom) }
-                        }
-                        .onAppear { DispatchQueue.main.async { reader.scrollTo("bottom", anchor: .bottom) } }
-                }
+                // One native text view: select across messages, ⌘A for the whole chat, ⌘C with formatting.
+                ChatThread(model: model, theme: theme)
+                    .frame(height: model.manualThreadHeight ?? min(330, max(44, model.threadHeight)))
                 Rectangle().fill(theme.border).frame(height: 1)
             }
             if !model.queue.isEmpty { QueuePanel(model: model) }
@@ -338,9 +255,6 @@ struct ChatBar: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { Color.clear.preference(key: SizeKey.self, value: $0.size) })
         .onPreferenceChange(SizeKey.self) { model.resize?($0) }
-        .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
-            legacyScroller = NSScroller.preferredScrollerStyle == .legacy
-        }
     }
 }
 
@@ -461,6 +375,9 @@ struct MarkdownText: View {
         }
     }
     static func highlighted(_ source: String, theme: ThemePalette = ThemeName.graphite.palette) -> AttributedString {
+        AttributedString(highlightedNS(source, theme: theme))
+    }
+    static func highlightedNS(_ source: String, theme: ThemePalette = ThemeName.graphite.palette) -> NSMutableAttributedString {
         let result = NSMutableAttributedString(string: source, attributes: [.foregroundColor: theme.textNS, .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
         let rules: [(String, NSColor)] = [
             (#"\b(let|var|func|fn|struct|class|enum|import|use|return|if|else|for|while|async|await|def|const|function|true|false|nil|null|public|private|static|throw|try)\b"#, NSColor(hex: theme.dark ? "C6A0E8" : "7651A8")!),
@@ -473,7 +390,7 @@ struct MarkdownText: View {
                 for match in regex.matches(in: source, range: NSRange(source.startIndex..., in: source)) { result.addAttribute(.foregroundColor, value: color, range: match.range) }
             }
         }
-        return AttributedString(result)
+        return result
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

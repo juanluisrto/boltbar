@@ -39,6 +39,7 @@ final class ComposerTextView: NSTextView {
     var onHelp: (() -> Void)?
     var onAgentKey: ((UInt16) -> Bool)?
     var onTab: ((Bool) -> Bool)?
+    var onSelectChat: (() -> Bool)?
     var onCompleteCommand: (() -> Bool)?
     override func mouseDown(with event: NSEvent) {
         _ = onEndModelSelection?(); super.mouseDown(with: event)
@@ -85,7 +86,8 @@ final class ComposerTextView: NSTextView {
             case ",": onSettings?(); return
             case "q": NSApp.terminate(nil); return
             case "v": paste(nil); return
-            case "a": selectAll(nil); return
+            // ⌘A in an empty field selects the whole chat; with text, the field's own.
+            case "a": if string.isEmpty, onSelectChat?() == true { return }; selectAll(nil); return
             case "c": copy(nil); return
             case "x": cut(nil); return
             default: break
@@ -168,6 +170,7 @@ struct GrowingEditor: NSViewRepresentable {
         text.agentShortcut = { model.agentSettings.shortcut }
         text.onHelp = { model.showHelp() }
         text.onTab = { forward in model.switchChipSelection(forward: forward) }
+        text.onSelectChat = { model.selectChat?() ?? false }
         text.onCompleteCommand = {
             let typed = model.draft.lowercased()
             guard let match = HelpContent.commands.first(where: { $0.command.hasPrefix(typed) }) else { return false }
