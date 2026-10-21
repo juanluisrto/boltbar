@@ -54,42 +54,80 @@ struct AttachmentStrip: View {
     }
 }
 
-struct MessageRow: View {
+/// Equatable, so a streamed word redraws only the reply it lands in, not every message above it.
+struct MessageRow: View, Equatable {
     @Environment(\.boltbarTheme) private var theme
     let message: Message
     @State private var hovering = false
+    static func == (a: MessageRow, b: MessageRow) -> Bool { a.message.sameContent(as: b.message) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
-                if message.interrupted == true {
-                    Text("INTERRUPTED").font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.text.opacity(0.25), lineWidth: 1))
-                        .foregroundStyle(.secondary).help("Stopped before it finished; the partial reply stays in the context")
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text(message.role == .user ? "YOU" : (message.author ?? "ASSISTANT").uppercased())
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
+                    if message.interrupted == true {
+                        Text("INTERRUPTED").font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.text.opacity(0.25), lineWidth: 1))
+                            .foregroundStyle(.secondary).help("Stopped before it finished; the partial reply stays in the context")
+                    }
+                    Spacer()
+                }.frame(height: 22)
+                if !message.attachments.isEmpty { AttachmentStrip(items: message.attachments) }
+                // An agent's steps sit between the words written before and after them.
+                ForEach(Array(MessageSegment.split(message.text, steps: message.steps ?? []).enumerated()), id: \.offset) { _, segment in
+                    switch segment {
+                    case .text(let text): MarkdownText(source: text)
+                    case .steps(let steps): AgentStepList(steps: steps)
+                    }
                 }
-                Spacer()
                 if message.role == .assistant, !message.text.isEmpty {
-                    CopyIconButton(text: message.text, label: "Copy response", visible: hovering)
-                }
-            }.frame(height: 22)
-            if !message.attachments.isEmpty { AttachmentStrip(items: message.attachments) }
-            if let steps = message.steps, !steps.isEmpty { AgentStepList(steps: steps).padding(.bottom, message.text.isEmpty ? 0 : 5) }
-            if !message.text.isEmpty {
-                MarkdownText(source: message.text)
-                if message.role == .assistant {
                     let sources = InlineMarkdown.sources(message.text)
                     if !sources.isEmpty { SourcesLine(sources: sources).padding(.top, 2) }
                 }
-            }
-            else if message.pending {
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(message.activity ?? "Thinking…").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary) }
-            } else if message.interrupted == true {
-                Text("Stopped before the reply began.").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary)
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+                if message.text.isEmpty {
+                    if message.pending {
+                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text(message.activity ?? "Thinking…").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary) }
+                    } else if message.interrupted == true, message.steps?.isEmpty ?? true {
+                        Text("Stopped before the reply began.").font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary)
+                    }
+                }
+            }.padding(.top, 6)
+            // The gap under a message holds its copy button, shown while the pointer is over the message or the gap.
+            HStack {
+                if message.role == .assistant, !message.text.isEmpty {
+                    CopyIconButton(text: message.text, label: "Copy response", visible: hovering)
+                }
+                Spacer()
+            }.frame(height: 24)
+        }.frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle()).onHover { hovering = $0 }
+    }
+}
+
+/// A reply read in order: text, then the steps taken at that point, then more text.
+enum MessageSegment {
+    case text(String), steps([AgentStep])
+    static func split(_ text: String, steps: [AgentStep]) -> [MessageSegment] {
+        guard !steps.isEmpty else { return text.isEmpty ? [] : [.text(text)] }
+        var result: [MessageSegment] = [], group: [AgentStep] = [], cursor = text.startIndex
+        func flushText(upTo end: String.Index) {
+            let chunk = text[cursor..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !chunk.isEmpty { result.append(.text(chunk)) }
+            cursor = end
+        }
+        for step in steps {
+            let end = text.index(text.startIndex, offsetBy: max(0, step.at ?? 0), limitedBy: text.endIndex) ?? text.endIndex
+            if end > cursor {
+                if !group.isEmpty { result.append(.steps(group)); group = [] }
+                flushText(upTo: end)
+            }
+            group.append(step)
+        }
+        if !group.isEmpty { result.append(.steps(group)) }
+        flushText(upTo: text.endIndex)
+        return result
     }
 }
 
@@ -202,8 +240,8 @@ struct ChatBar: View {
             } else if !model.messages.isEmpty {
                 ScrollViewReader { reader in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            ForEach(model.messages) { MessageRow(message: $0) }
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(model.messages) { MessageRow(message: $0).equatable() }
                             Color.clear.frame(height: 1).id("bottom")
                         }.frame(maxWidth: .infinity, alignment: .leading)
                             // A legacy scroller (shown with a mouse attached) takes room
@@ -212,7 +250,11 @@ struct ChatBar: View {
                             .background(GeometryReader { Color.clear.preference(key: ThreadHeightKey.self, value: $0.size.height) })
                             .background(ChatScrollObserver { followsStream = $0 })
                     }.frame(height: model.manualThreadHeight ?? min(330, max(44, model.threadHeight)))
-                        .onPreferenceChange(ThreadHeightKey.self) { model.threadHeight = $0 }
+                        .onPreferenceChange(ThreadHeightKey.self) { height in
+                            if abs(model.threadHeight - height) > 0.5 { model.threadHeight = height }
+                        }
+                        // Links to files open in their default app instead of failing as web addresses.
+                        .environment(\.openURL, OpenURLAction { url in model.openLink(url) ? .handled : .systemAction })
                         .onChange(of: model.messages.last?.text) { _ in
                             if followsStream { reader.scrollTo("bottom", anchor: .bottom) }
                         }
@@ -220,6 +262,12 @@ struct ChatBar: View {
                             followsStream = true
                             reader.scrollTo("bottom", anchor: .bottom)
                         }
+                        // A chat opened from history starts at its end, like one you were just in.
+                        .onChange(of: model.threadRevision) { _ in
+                            followsStream = true
+                            DispatchQueue.main.async { reader.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .onAppear { DispatchQueue.main.async { reader.scrollTo("bottom", anchor: .bottom) } }
                 }
                 Rectangle().fill(theme.border).frame(height: 1)
             }
@@ -500,6 +548,24 @@ enum InlineMarkdown {
             found[number] = Source(number: number, url: url, domain: host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
         }
         return found.keys.sorted().compactMap { found[$0] }
+    }
+}
+
+/// A link a model wrote to a file on this Mac: absolute, under ~, or relative to the agent's project,
+/// possibly ending in :line or #Lline, which no app can open as a web address.
+enum LocalLink {
+    static func fileURL(_ url: URL, base: String?) -> URL? {
+        if let scheme = url.scheme?.lowercased(), scheme != "file" { return nil }
+        var path = url.scheme == nil ? (url.relativeString.removingPercentEncoding ?? url.relativeString) : url.path
+        if let hash = path.firstIndex(of: "#") { path = String(path[..<hash]) }
+        if let line = path.range(of: #":\d+(:\d+)?$"#, options: .regularExpression) { path.removeSubrange(line) }
+        guard !path.isEmpty else { return nil }
+        if path.hasPrefix("~") { path = (path as NSString).expandingTildeInPath }
+        if !path.hasPrefix("/") {
+            guard let base else { return nil }
+            path = (base as NSString).appendingPathComponent(path)
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL
     }
 }
 

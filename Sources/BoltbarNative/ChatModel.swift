@@ -57,6 +57,16 @@ import SwiftUI
     /// Full access waits for a second → (or click) on this project.
     @Published private(set) var pendingFullAccess: UUID?
     @Published private(set) var pendingApproval: ApprovalRequest?
+    /// The project whose turn asked; a permission change there can answer the request.
+    private var pendingApprovalProject: UUID?
+    /// The agent turn now running, so a permission change reaches it.
+    private var runningAgent: (project: UUID, provider: Provider, launched: AgentPermission, control: AgentControl)?
+    /// Bumped when a chat opens, so the thread scrolls to its end.
+    @Published private(set) var threadRevision = 0
+    // Streamed text waits here briefly, so a fast reply redraws the bar ~30 times a second, not per token.
+    private var streamBuffer = ""
+    private var streamBufferID: UUID?
+    private var streamFlush: Task<Void, Never>?
     /// This chat's Claude Code session or Codex thread; agent turns continue it.
     @Published private(set) var agentSession: AgentSession? { didSet { if agentSession != oldValue { conversationDirty = true } } }
     /// A short confirmation above the toolbar, cleared after a few seconds.
@@ -236,6 +246,20 @@ import SwiftUI
         guard let index = agentSettings.projects.firstIndex(where: { $0.id == id }), agentSettings.projects[index].permission != permission else { return }
         agentSettings.projects[index].permission = permission
         agentSettings.projects[index].fullSince = permission == .full ? Date() : nil
+        applyToRunningTurn(permission, project: id)
+    }
+    /// A change mid-turn applies at once: Claude Code switches mode, Boltbar answers requests by the new light,
+    /// and an open request it now decides is answered. Codex in Look or Full asks for nothing, so it keeps its
+    /// sandbox until the reply ends.
+    private func applyToRunningTurn(_ permission: AgentPermission, project id: UUID) {
+        guard let run = runningAgent, run.project == id else { return }
+        run.control.change(to: permission)
+        if let pending = pendingApproval, pendingApprovalProject == id, let decision = Agent.autoDecision(pending, permission: permission) {
+            resolveApproval(decision)
+        }
+        if run.provider == .openai, run.launched == .look || run.launched == .full, permission != run.launched {
+            show(notice: "Codex keeps its \(run.launched.title) permission until this reply ends.")
+        }
     }
     /// Adds a folder (or selects it if already listed) and makes it the agent's project.
     func addProject(path: String) {
@@ -258,16 +282,19 @@ import SwiftUI
     }
     func chooseProjectFolder() { presentFolderPicker?() }
     /// Waits for the user's answer; a request already allowed in this chat goes through.
-    func askApproval(_ request: ApprovalRequest) async -> ApprovalDecision {
+    /// The project's light, as it is now, decides first; then "allow in this chat"; then the user.
+    func askApproval(_ request: ApprovalRequest, project: UUID? = nil) async -> ApprovalDecision {
+        if let project, let level = agentSettings.projects.first(where: { $0.id == project })?.permission,
+           let decision = Agent.autoDecision(request, permission: level) { return decision }
         if approvedKeys.contains(request.key) { return .allow }
         approvalContinuation?.resume(returning: .deny)
-        pendingApproval = request
+        pendingApproval = request; pendingApprovalProject = project
         return await withCheckedContinuation { approvalContinuation = $0 }
     }
     func resolveApproval(_ decision: ApprovalDecision) {
         guard let request = pendingApproval, let continuation = approvalContinuation else { return }
         if decision == .allowForChat { approvedKeys.insert(request.key) }
-        pendingApproval = nil; approvalContinuation = nil
+        pendingApproval = nil; approvalContinuation = nil; pendingApprovalProject = nil
         continuation.resume(returning: decision)
     }
 
@@ -391,6 +418,7 @@ import SwiftUI
         conversationID = UUID(); conversationCreated = Date(); conversationDirty = false
     }
     func stop() {
+        flushStreamedText()
         // A stopped turn answers its open permission request with a refusal.
         resolveApproval(.deny)
         generation = UUID(); task?.cancel(); task = nil; streaming = false
@@ -445,7 +473,7 @@ import SwiftUI
             let record = try await historyStore.load(id)
             guard generation == current else { return false }
             messages = record.messages; conversationID = record.summary.id; conversationCreated = record.summary.createdAt
-            agentSession = record.agentSession
+            agentSession = record.agentSession; threadRevision += 1
             preferences.provider = record.provider; preferences.effort = record.effort
             preferences.models[record.provider.rawValue] = record.model
             preferences.transports[record.provider.rawValue] = record.transport
@@ -540,8 +568,10 @@ import SwiftUI
         if agentMode, let project = agentProject {
             agentSettings.expireFullAccess()
             let permission = agentSettings.projects.first { $0.id == project.id }?.permission ?? project.permission
-            request.agent = AgentTurn(directory: project.path, permission: permission, resume: resume(in: project.path, context: context)) { [weak self] approval in
-                await self?.askApproval(approval) ?? .deny
+            let control = AgentControl()
+            runningAgent = (project.id, provider, permission, control)
+            request.agent = AgentTurn(directory: project.path, permission: permission, resume: resume(in: project.path, context: context), control: control) { [weak self] approval in
+                await self?.askApproval(approval, project: project.id) ?? .deny
             }
         }
         return request
@@ -575,15 +605,18 @@ import SwiftUI
                     switch update {
                     case .text(let text):
                         if first == nil { first = (ProcessInfo.processInfo.systemUptime - start) * 1000 }
-                        count += 1; self.messages[index].text += text
-                    case .replaceText(let text): self.messages[index].text = text
+                        count += 1; self.bufferStreamedText(text, for: assistant.id)
+                    case .replaceText(let text): self.flushStreamedText(); self.messages[index].text = text
                     case .activity(let activity): self.messages[index].activity = activity
                     case .agentSession(let id):
                         // From here on the session holds this exchange, even if it's stopped or fails.
                         if let agent = request.agent { self.agentSession = AgentSession(provider: request.provider, directory: agent.directory, id: id, seen: assistant.id) }
-                    case .step(let step):
+                    case .step(var step):
+                        // A step keeps the place in the reply where it began, so it shows between the words around it.
+                        self.flushStreamedText()
                         var steps = self.messages[index].steps ?? []
-                        if let at = steps.firstIndex(where: { $0.id == step.id }) { steps[at] = step } else { steps.append(step) }
+                        if let at = steps.firstIndex(where: { $0.id == step.id }) { step.at = steps[at].at; steps[at] = step }
+                        else { step.at = self.messages[index].text.count; steps.append(step) }
                         self.messages[index].steps = steps
                     }
                 }
@@ -593,6 +626,8 @@ import SwiftUI
                 failed = true
                 if let self, self.generation == current, !Task.isCancelled { self.error = error.localizedDescription }
             }
+            self?.flushStreamedText()
+            if let self, self.runningAgent?.control === request.agent?.control { self.runningAgent = nil }
             if let self, self.generation == current {
                 self.streaming = false
                 if let index = self.messages.firstIndex(where: { $0.id == assistant.id }) {
@@ -606,6 +641,33 @@ import SwiftUI
                 if !self.queuePaused { self.dispatchQueue() }
             }
         }
+    }
+    /// Where relative file links in this chat point: its agent project, else your home folder.
+    var linkBase: String { agentSession?.directory ?? (agentMode ? agentProject?.path : nil) ?? NSHomeDirectory() }
+    /// Opens a link from a reply when it names a file: in its default app, or in Finder with ⌘ held.
+    /// False hands anything else (web addresses, mail) to the system.
+    func openLink(_ url: URL, revealInFinder: Bool = NSEvent.modifierFlags.contains(.command)) -> Bool {
+        guard let file = LocalLink.fileURL(url, base: linkBase) else { return false }
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            show(notice: "Couldn't find \(file.path)"); return true
+        }
+        if revealInFinder { NSWorkspace.shared.activateFileViewerSelecting([file]) } else { NSWorkspace.shared.open(file) }
+        return true
+    }
+    private func bufferStreamedText(_ text: String, for id: UUID) {
+        if streamBufferID != id { flushStreamedText(); streamBufferID = id }
+        streamBuffer += text
+        guard streamFlush == nil else { return }
+        streamFlush = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 33_000_000)
+            self?.flushStreamedText()
+        }
+    }
+    func flushStreamedText() {
+        streamFlush?.cancel(); streamFlush = nil
+        defer { streamBuffer = "" }
+        guard !streamBuffer.isEmpty, let id = streamBufferID, let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[index].text += streamBuffer
     }
     func add(_ items: [Attachment]) {
         guard attachments.count + items.count <= 6 else { error = "Attach up to six files per message."; return }

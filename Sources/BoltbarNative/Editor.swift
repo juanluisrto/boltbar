@@ -207,19 +207,28 @@ struct GrowingEditor: NSViewRepresentable {
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let text = scroll.documentView as? ComposerTextView else { return }
-        text.textColor = theme.textNS; text.insertionPointColor = theme.accentNS
-        text.selectedTextAttributes = [.backgroundColor: theme.accentNS.withAlphaComponent(0.25), .foregroundColor: theme.textNS]
+        // This runs on every redraw, once per streamed word too. Recolouring the whole text each time made
+        // typing during a reply stutter and flicker, so colours change only with the theme.
+        let coordinator = context.coordinator
+        if coordinator.textColor != theme.textNS || coordinator.accentColor != theme.accentNS {
+            coordinator.textColor = theme.textNS; coordinator.accentColor = theme.accentNS
+            text.textColor = theme.textNS; text.insertionPointColor = theme.accentNS
+            text.selectedTextAttributes = [.backgroundColor: theme.accentNS.withAlphaComponent(0.25), .foregroundColor: theme.textNS]
+        }
         if text.string != model.draft { text.string = model.draft }
-        scroll.hasVerticalScroller = model.inputHeight >= 160
+        let scrolls = model.inputHeight >= 160
+        if scroll.hasVerticalScroller != scrolls { scroll.hasVerticalScroller = scrolls }
     }
     final class Coordinator: NSObject, NSTextViewDelegate {
         let model: ChatModel
+        var textColor: NSColor?, accentColor: NSColor?
         init(_ model: ChatModel) { self.model = model }
         func textDidChange(_ notification: Notification) {
             guard let text = notification.object as? NSTextView,
                   let layout = text.layoutManager, let container = text.textContainer else { return }
             model.draft = text.string; layout.ensureLayout(for: container)
-            model.inputHeight = GrowingEditor.height(for: ceil(layout.usedRect(for: container).height + 6), manual: model.manualInputHeight)
+            let height = GrowingEditor.height(for: ceil(layout.usedRect(for: container).height + 6), manual: model.manualInputHeight)
+            if model.inputHeight != height { model.inputHeight = height }
         }
     }
 }

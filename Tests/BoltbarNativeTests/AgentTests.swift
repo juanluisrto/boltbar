@@ -13,8 +13,8 @@ final class AgentTests: XCTestCase {
 
     func testClaudeArgumentsFollowThePermission() {
         let look = ClaudeAgent.arguments(request(), agent: turn(.look), session: "s1")
-        XCTAssertEqual(look[look.firstIndex(of: "--permission-prompts")! + 1], "none")
-        XCTAssertFalse(look.contains("--permission-prompt-tool"))
+        XCTAssertEqual(look[look.firstIndex(of: "--permission-mode")! + 1], "manual")
+        XCTAssertEqual(look[look.firstIndex(of: "--permission-prompt-tool")! + 1], "stdio", "Look's requests reach Boltbar, which refuses them")
         let ask = ClaudeAgent.arguments(request(), agent: turn(.ask), session: "s1")
         XCTAssertEqual(ask[ask.firstIndex(of: "--permission-mode")! + 1], "manual")
         XCTAssertEqual(ask[ask.firstIndex(of: "--permission-prompt-tool")! + 1], "stdio")
@@ -29,8 +29,11 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(edit[edit.firstIndex(of: "--permission-prompt-tool")! + 1], "stdio", "Edit still asks before commands")
         let full = ClaudeAgent.arguments(request(), agent: turn(.full), session: "s1")
         XCTAssertEqual(full[full.firstIndex(of: "--permission-mode")! + 1], "bypassPermissions")
-        XCTAssertTrue(full.contains("--allow-dangerously-skip-permissions"))
-        XCTAssertFalse(full.contains("--permission-prompt-tool"))
+        for args in [look, ask, edit, full] {
+            XCTAssertTrue(args.contains("--allow-dangerously-skip-permissions"), "Any turn can be switched to Full mid-turn")
+            XCTAssertEqual(args[args.firstIndex(of: "--permission-prompt-tool")! + 1], "stdio")
+        }
+        XCTAssertEqual(AgentPermission.allCases.map(ClaudeAgent.mode), ["default", "default", "acceptEdits", "bypassPermissions"])
         XCTAssertEqual(CodexAgent.policy(.edit).sandbox, "workspace-write")
         XCTAssertEqual(CodexAgent.policy(.edit).approval, "untrusted", "Codex asks and Boltbar accepts edits in the project")
         XCTAssertEqual(CodexAgent.policy(.full).sandbox, "danger-full-access")
@@ -70,8 +73,8 @@ final class AgentTests: XCTestCase {
         XCTAssertLessThan(long.count, 41_000); XCTAssertTrue(long.contains("the rest of this file was cut"))
     }
 
-    @MainActor func testCodexEditAcceptsChangesInsideTheProjectOnly() async throws {
-        var stream = CodexAgentStream(directory: folder, permission: .edit)
+    @MainActor func testRequestsSayWhatTheyAreAndTheLightDecides() async throws {
+        var stream = CodexAgentStream(directory: folder)
         func change(_ id: String, _ path: String) throws {
             _ = try stream.consume(["method": "item/started", "params": ["item": ["id": id, "type": "fileChange", "status": "inProgress", "changes": [["path": path, "kind": ["type": "add"]]]]]])
         }
@@ -79,24 +82,86 @@ final class AgentTests: XCTestCase {
         try change("out", "/etc/hosts")
         try change("climb", folder + "/../other/a.swift")
         try change("sibling", folder + "-copy/a.swift")
-        let log = AskedLog()
-        let inside = await stream.answer("item/fileChange/requestApproval", params: ["itemId": "in"]) { _ in XCTFail("Edits in the project go through"); return .deny }
-        XCTAssertEqual(inside["decision"] as? String, "accept")
-        for id in ["out", "climb", "sibling"] {
-            let answer = await stream.answer("item/fileChange/requestApproval", params: ["itemId": id]) { _ in log.asked.append(id); return .deny }
-            XCTAssertEqual(answer["decision"] as? String, "decline")
+        var seen: [ApprovalRequest] = []
+        for (id, extra) in [("in", [:]), ("out", [:]), ("climb", [:]), ("sibling", [:]), ("in", ["grantRoot": "/"])] as [(String, [String: Any])] {
+            let log = AskedLog()
+            _ = await stream.answer("item/fileChange/requestApproval", params: extra.merging(["itemId": id]) { a, _ in a }) { request in log.requests.append(request); return .allow }
+            seen += log.requests
         }
-        XCTAssertEqual(log.asked, ["out", "climb", "sibling"], "Changes outside the project still ask")
-        let wider = await stream.answer("item/fileChange/requestApproval", params: ["itemId": "in", "grantRoot": "/"]) { _ in log.asked.append("root"); return .deny }
-        XCTAssertEqual(wider["decision"] as? String, "decline")
-        _ = await stream.answer("item/commandExecution/requestApproval", params: ["command": "make", "cwd": folder]) { _ in log.asked.append("make"); return .allow }
-        XCTAssertEqual(log.asked.suffix(2), ["root", "make"], "Wider write access and commands still ask")
+        XCTAssertEqual(seen.map(\.kind), Array(repeating: .edit, count: 5))
+        XCTAssertEqual(seen.map(\.insideProject), [true, false, false, false, false], "Outside paths, climbing out and wider write access aren't inside")
+        let command = AskedLog()
+        _ = await stream.answer("item/commandExecution/requestApproval", params: ["command": "make", "cwd": folder]) { request in command.requests.append(request); return .allow }
+        XCTAssertEqual(command.requests.first?.kind, .command)
 
-        var careful = CodexAgentStream(directory: folder, permission: .ask)
-        _ = try careful.consume(["method": "item/started", "params": ["item": ["id": "in", "type": "fileChange", "changes": [["path": folder + "/a.swift"]]]]])
-        let ask = await careful.answer("item/fileChange/requestApproval", params: ["itemId": "in"]) { _ in .allow }
-        XCTAssertEqual(ask["decision"] as? String, "accept")
+        var claude = ClaudeAgentStream(directory: folder)
+        let claudeLog = AskedLog()
+        _ = await claude.answer(["subtype": "can_use_tool", "tool_name": "Write", "input": ["file_path": folder + "/a.txt", "content": "hi"]]) { claudeLog.requests.append($0); return .allow }
+        _ = await claude.answer(["subtype": "can_use_tool", "tool_name": "Write", "input": ["file_path": "/tmp/a.txt", "content": "hi"]]) { claudeLog.requests.append($0); return .allow }
+        XCTAssertEqual(claudeLog.requests.map(\.insideProject), [true, false])
+
+        let edit = seen[0], outside = seen[1], run = command.requests[0]
+        XCTAssertEqual(Agent.autoDecision(edit, permission: .look), .deny)
+        XCTAssertNil(Agent.autoDecision(edit, permission: .ask))
+        XCTAssertEqual(Agent.autoDecision(edit, permission: .edit), .allow, "Edit accepts changes inside the project")
+        XCTAssertNil(Agent.autoDecision(outside, permission: .edit))
+        XCTAssertNil(Agent.autoDecision(run, permission: .edit), "Edit still asks before commands")
+        XCTAssertEqual(Agent.autoDecision(run, permission: .full), .allow)
         XCTAssertTrue(Agent.contains(folder, "Sources/a.swift"), "Relative paths resolve against the project")
+    }
+
+    @MainActor func testChangingThePermissionMidTurnAppliesAtOnce() async throws {
+        var decisions: [ApprovalDecision] = [], changes: [AgentPermission] = []
+        let changed = AskedLog()
+        let model = model { request, update in
+            request.agent?.control?.listen { permission in Task { @MainActor in changed.permissions.append(permission) } }
+            let run = ApprovalRequest(id: "1", action: "Run", subject: "swift test", directory: request.agent!.directory, kind: .command)
+            decisions.append(await request.agent!.approve(run))
+            decisions.append(await request.agent!.approve(ApprovalRequest(id: "2", action: "Run", subject: "make", directory: request.agent!.directory, kind: .command)))
+            await update(.text("Done."))
+        }
+        model.toggleAgentMode()
+        let project = try XCTUnwrap(model.agentProject?.id)
+        model.draft = "Test it"; model.send()
+        await wait { model.pendingApproval != nil }
+        model.setPermission(.full, for: project)
+        await wait { !model.streaming }
+        changes = changed.permissions
+        XCTAssertEqual(decisions, [.allow, .allow], "Full answers the open request and the next one without asking")
+        XCTAssertNil(model.pendingApproval)
+        XCTAssertEqual(changes, [.full], "The running turn hears about the change")
+
+        decisions = []
+        model.setPermission(.look, for: project)
+        model.draft = "Again"; model.send()
+        await wait { !model.streaming }
+        XCTAssertEqual(decisions, [.deny, .deny], "Look refuses by itself")
+    }
+
+    func testStepsSitBetweenTheWordsAroundThem() {
+        let steps = [AgentStep(id: "a", kind: .read, title: "Read a", status: .done, at: 12),
+                     AgentStep(id: "b", kind: .command, title: "$ make", status: .done, at: 12),
+                     AgentStep(id: "c", kind: .edit, title: "Edit b", status: .done, at: 31)]
+        let text = "Let me look.\n\nFound it, fixing.\n\nDone, it builds."
+        let parts = MessageSegment.split(text, steps: steps).map { part -> String in
+            switch part { case .text(let t): return "T:" + t; case .steps(let s): return "S:" + s.map(\.id).joined() }
+        }
+        XCTAssertEqual(parts, ["T:Let me look.", "S:ab", "T:Found it, fixing.", "S:c", "T:Done, it builds."])
+        let old = [AgentStep(id: "x", kind: .read, title: "Read x", status: .done)]
+        XCTAssertEqual(MessageSegment.split("Reply", steps: old).count, 2, "Older chats show their steps first")
+        if case .steps = MessageSegment.split("Reply", steps: old).first {} else { XCTFail("Steps first") }
+    }
+
+    func testFileLinksResolveToFilesOnThisMac() throws {
+        let base = "/Users/me/Projects/app"
+        XCTAssertEqual(LocalLink.fileURL(URL(string: "pompeyo/README.md")!, base: base)?.path, base + "/pompeyo/README.md")
+        XCTAssertEqual(LocalLink.fileURL(URL(string: "Sources/App.swift:42")!, base: base)?.path, base + "/Sources/App.swift")
+        XCTAssertEqual(LocalLink.fileURL(URL(string: "/etc/hosts#L3")!, base: base)?.path, "/etc/hosts")
+        XCTAssertEqual(LocalLink.fileURL(URL(string: "file:///tmp/a%20b.txt")!, base: base)?.path, "/tmp/a b.txt")
+        XCTAssertEqual(LocalLink.fileURL(URL(string: "~/notes.md")!, base: base)?.path, NSHomeDirectory() + "/notes.md")
+        XCTAssertEqual(LocalLink.fileURL(URL(string: "../shared/x.md")!, base: base)?.path, "/Users/me/Projects/shared/x.md")
+        XCTAssertNil(LocalLink.fileURL(URL(string: "https://swift.org")!, base: base), "Web links go to the browser")
+        XCTAssertNil(LocalLink.fileURL(URL(string: "mailto:a@b.c")!, base: base))
     }
 
     func testClaudeEventsBecomeStepsTextAndApprovals() async throws {
@@ -385,4 +450,8 @@ final class AgentTests: XCTestCase {
 }
 
 /// What the approval handler was asked, kept on the main actor where the handler runs.
-@MainActor private final class AskedLog { var asked: [String] = [] }
+@MainActor private final class AskedLog {
+    var asked: [String] = []
+    var requests: [ApprovalRequest] = []
+    var permissions: [AgentPermission] = []
+}

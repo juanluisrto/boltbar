@@ -95,6 +95,12 @@ struct Message: Identifiable, Codable {
     var interrupted: Bool? = nil
     /// What the agent did during this reply, in order.
     var steps: [AgentStep]? = nil
+    /// Everything a message row shows; attachments compare by identity, not by their bytes.
+    func sameContent(as other: Message) -> Bool {
+        id == other.id && role == other.role && text == other.text && pending == other.pending && author == other.author
+            && activity == other.activity && interrupted == other.interrupted && steps == other.steps
+            && attachments.map(\.id) == other.attachments.map(\.id)
+    }
 }
 struct ChatRequest {
     let provider: Provider

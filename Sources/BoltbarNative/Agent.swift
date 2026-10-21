@@ -78,18 +78,36 @@ struct AgentStep: Codable, Equatable, Identifiable {
     var title: String
     var status: Status = .running
     var detail: String?
+    /// How much of the reply's text came before this step; older chats have none and show steps first.
+    var at: Int? = nil
 }
 
 struct ApprovalRequest: Identifiable, Equatable {
+    enum Kind: Equatable { case command, edit, other }
     let id: String
     /// "Run" or "Edit", followed by `subject`.
     let action: String
     let subject: String
     let directory: String
+    var kind: Kind = .other
+    /// An edit whose every path lies in the project folder.
+    var insideProject = false
     /// Identifies the same request again for "allow in this chat".
     var key: String { action + "\u{1F}" + subject }
 }
 enum ApprovalDecision { case allow, allowForChat, deny }
+
+/// Carries a permission change to a turn that is already running. Claude Code
+/// switches modes in place; Codex keeps its sandbox until the turn ends.
+final class AgentControl: @unchecked Sendable {
+    private let lock = NSLock()
+    private var listener: (@Sendable (AgentPermission) -> Void)?
+    func listen(_ handler: (@Sendable (AgentPermission) -> Void)?) { lock.lock(); listener = handler; lock.unlock() }
+    func change(to permission: AgentPermission) {
+        lock.lock(); let handler = listener; lock.unlock()
+        handler?(permission)
+    }
+}
 
 /// What an agent turn needs from the app.
 struct AgentTurn {
@@ -97,6 +115,7 @@ struct AgentTurn {
     let permission: AgentPermission
     /// The session to continue; nil starts a new one with the whole chat.
     var resume: AgentResume? = nil
+    var control: AgentControl? = nil
     let approve: @MainActor @Sendable (ApprovalRequest) async -> ApprovalDecision
 }
 
@@ -183,6 +202,16 @@ enum Agent {
         let target = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: base, isDirectory: true)).standardizedFileURL.path
         return target == base || target.hasPrefix(base.hasSuffix("/") ? base : base + "/")
     }
+    /// What the permission light decides by itself, read when each request arrives so a change made
+    /// mid-turn applies at once; nil means the user is asked.
+    static func autoDecision(_ request: ApprovalRequest, permission: AgentPermission) -> ApprovalDecision? {
+        switch permission {
+        case .look: return .deny
+        case .ask: return nil
+        case .edit: return request.kind == .edit && request.insideProject ? .allow : nil
+        case .full: return .allow
+        }
+    }
     static func shorten(_ text: String, _ limit: Int = 90) -> String {
         let line = text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? text
         return line.count > limit ? String(line.prefix(limit - 1)) + "…" : line
@@ -201,13 +230,19 @@ enum ClaudeAgent {
                     "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--safe-mode",
                     agent.resume == nil ? "--session-id" : "--resume", session,
                     "--append-system-prompt", Agent.instructions(agent.directory, for: .anthropic)]
-        switch agent.permission {
-        case .look: args += ["--permission-mode", "manual", "--permission-prompts", "none"]
-        case .ask: args += ["--permission-mode", "manual", "--permission-prompt-tool", "stdio"]
-        case .edit: args += ["--permission-mode", "acceptEdits", "--permission-prompt-tool", "stdio"]
-        case .full: args += ["--permission-mode", "bypassPermissions", "--allow-dangerously-skip-permissions"]
-        }
+        // Every level sends its requests to Boltbar, which refuses them in Look, and may switch to
+        // Full mid-turn; allowing bypass mode doesn't turn it on.
+        let mode = agent.permission == .look || agent.permission == .ask ? "manual" : self.mode(agent.permission)
+        args += ["--permission-mode", mode, "--permission-prompt-tool", "stdio", "--allow-dangerously-skip-permissions"]
         return args
+    }
+    /// Claude Code's mode for a permission, as `set_permission_mode` takes it.
+    static func mode(_ permission: AgentPermission) -> String {
+        switch permission {
+        case .look, .ask: return "default"
+        case .edit: return "acceptEdits"
+        case .full: return "bypassPermissions"
+        }
     }
 
     static func stream(_ request: ChatRequest, agent: AgentTurn, update: @escaping (StreamUpdate) async -> Void) async throws {
@@ -215,7 +250,11 @@ enum ClaudeAgent {
         let session = agent.resume?.id ?? UUID().uuidString.lowercased()
         let child = try LineProcess(program: CLI.program(.anthropic), args: arguments(request, agent: agent, session: session), keepInputOpen: true,
                                     directory: agent.directory)
-        defer { child.cancel() }
+        defer { child.cancel(); agent.control?.listen(nil) }
+        agent.control?.listen { permission in
+            Task { try? await child.send(["type": "control_request", "request_id": "boltbar-\(UUID().uuidString)",
+                                          "request": ["subtype": "set_permission_mode", "mode": mode(permission)]]) }
+        }
         try await withTaskCancellationHandler {
             try await child.send(["type": "user", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()])
             var parser = ClaudeAgentStream(directory: agent.directory)
@@ -281,7 +320,10 @@ struct ClaudeAgentStream {
         let tool = request["tool_name"] as? String ?? "Tool"
         let input = request["input"] as? [String: Any] ?? [:]
         let step = Self.step(id: UUID().uuidString, tool: tool, input: input, directory: directory)
-        let approval = ApprovalRequest(id: UUID().uuidString, action: Self.action(step), subject: Self.subject(step), directory: directory)
+        let path = input["file_path"] as? String ?? input["path"] as? String ?? input["notebook_path"] as? String
+        let approval = ApprovalRequest(id: UUID().uuidString, action: Self.action(step), subject: Self.subject(step), directory: directory,
+                                       kind: step.kind == .command ? .command : step.kind == .edit ? .edit : .other,
+                                       insideProject: step.kind == .edit && path.map { Agent.contains(directory, $0) } == true)
         switch await approve(approval) {
         case .allow, .allowForChat: return ["behavior": "allow", "updatedInput": input]
         case .deny:
@@ -333,7 +375,7 @@ enum CodexAgent {
         defer { child.cancel() }
         try await withTaskCancellationHandler {
             try await child.send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "boltbar", "title": "Boltbar", "version": "0.6.0"]]])
-            var parser = CodexAgentStream(directory: agent.directory, permission: agent.permission)
+            var parser = CodexAgentStream(directory: agent.directory)
             let (sandbox, approval) = policy(agent.permission)
             for try await line in child.lines {
                 try Task.checkCancellation()
@@ -369,14 +411,13 @@ enum CodexAgent {
 /// Turns Codex app-server notifications into text and steps, and approval requests into decisions.
 struct CodexAgentStream {
     let directory: String
-    let permission: AgentPermission
     private var text = CodexChatStream()
     private var steps: [String: AgentStep] = [:]
     private var changes: [String: [String]] = [:]
     private var afterStep = false
     private var saidSomething = false
     private(set) var completed = false
-    init(directory: String, permission: AgentPermission = .ask) { self.directory = directory; self.permission = permission }
+    init(directory: String) { self.directory = directory }
 
     mutating func consume(_ event: [String: Any]) throws -> [StreamUpdate] {
         var out: [StreamUpdate] = []
@@ -403,14 +444,13 @@ struct CodexAgentStream {
         switch method {
         case "item/commandExecution/requestApproval":
             request = ApprovalRequest(id: UUID().uuidString, action: "Run", subject: Self.command(params["command"] as? String ?? ""),
-                                      directory: params["cwd"] as? String ?? directory)
+                                      directory: params["cwd"] as? String ?? directory, kind: .command)
         case "item/fileChange/requestApproval":
-            if permission == .edit, params["grantRoot"] as? String == nil, let paths = (params["itemId"] as? String).flatMap({ changes[$0] }),
-               !paths.isEmpty, paths.allSatisfy({ Agent.contains(directory, $0) }) {
-                return ["decision": "accept"]
-            }
+            // Codex has no "edits only" policy, so Boltbar's light accepts edits inside the project.
+            let paths = (params["itemId"] as? String).flatMap { changes[$0] } ?? []
             let subject = (params["itemId"] as? String).flatMap { steps[$0]?.title.split(separator: " ", maxSplits: 1).last.map(String.init) } ?? "files"
-            request = ApprovalRequest(id: UUID().uuidString, action: "Edit", subject: subject, directory: directory)
+            request = ApprovalRequest(id: UUID().uuidString, action: "Edit", subject: subject, directory: directory, kind: .edit,
+                                      insideProject: params["grantRoot"] as? String == nil && !paths.isEmpty && paths.allSatisfy { Agent.contains(directory, $0) })
         default:
             // Extra permissions, tool input and MCP prompts aren't offered in agent mode yet.
             return ["decision": "decline"]

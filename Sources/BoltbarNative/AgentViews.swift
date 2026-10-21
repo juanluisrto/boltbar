@@ -349,6 +349,8 @@ enum HelpContent {
 
         It follows the project's own rules: Claude Code reads CLAUDE.md, or AGENTS.md when there is none, and Codex the other way round.
 
+        Changing the light applies at once, even while it works; only Codex in Look or Full keeps its sandbox until the reply ends. Links to files in a reply open in their default app; ⌘-click shows them in Finder.
+
         Each agent chat is a real Claude Code session or Codex thread, so later messages continue it and you can pick it up in a terminal: /terminal, or Continue in terminal in the agent chip, copies the command. Switching project or CLI, or retrying a reply, starts a new session. Deleting a chat in Boltbar leaves the CLI's copy.
 
         When it asks, ⌘↵ allows, ⌥⌘↵ allows the same thing for the rest of the chat, and Esc denies. Stop denies anything still waiting. Web search is off in agent mode.
