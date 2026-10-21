@@ -21,7 +21,7 @@ Use company Team ID `Z267N8J3BU` and an Apple app-specific password, or an appro
 ```sh
 BOLTBAR_SIGN_IDENTITY='Developer ID Application: JUAN LUIS RTO SL (Z267N8J3BU)' \
 BOLTBAR_NOTARY_PROFILE=boltbar-notary \
-BOLTBAR_VERSION=0.6.0 BOLTBAR_BUILD=0.6.0 \
+BOLTBAR_VERSION=0.7.0 BOLTBAR_BUILD=0.7.0 \
 sh scripts/package-release.sh
 ```
 

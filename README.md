@@ -22,7 +22,7 @@ A compact AI chat bar built in Swift, SwiftUI and AppKit. Starting with v0.2.0, 
 
 ## Install
 
-Download the universal ZIP or DMG from [v0.6.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.6.0), or run:
+Download the universal ZIP or DMG from [v0.7.0](https://github.com/juanluisrto/boltbar/releases/tag/v0.7.0), or run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh
 
 The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
 
-**v0.6.0 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
+**v0.7.0 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
 
 The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
 
@@ -56,7 +56,7 @@ The default build uses an ad hoc signature. For local development, supply an exi
 
 From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.6.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
+With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.7.0`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
 ## Credentials and providers
 
@@ -119,7 +119,7 @@ Optional file arguments are for synthetic QA fixtures only. With fixtures, the p
 
 ## Support
 
-Boltbar is free, open source and fully functional. If it's useful to you, a one-off supporter license keeps it going. Unlicensed copies show a quiet reminder above the toolbar at most once a week, and only after a week of use and 30 replies; it never interrupts a reply, a permission request or the shortcut. Settings → License shows who a copy is licensed to, takes a pasted key and links to the store; **Buy a license…** in the menu-bar menu does the same while unlicensed.
+Boltbar is free, open source and fully functional. If it's useful to you, a one-off supporter license keeps it going. Unlicensed copies show a quiet reminder above the toolbar at most once a week, and only after a week of use and 30 replies; it never interrupts a reply, a permission request or the shortcut. Settings → License shows who a copy is licensed to, takes a pasted key and links to the store; **Buy a license…** in the menu-bar menu does the same while unlicensed. Licenses are sold at [juanluis.me/boltbar/buy](https://juanluis.me/boltbar/buy) through Stripe, which handles VAT; the key appears right after payment. A lost key can be shown again at [juanluis.me/boltbar/license](https://juanluis.me/boltbar/license) from the email and invoice number on Stripe's receipt.
 
 License keys are checked offline against the Ed25519 public key in `Resources/license-public-key.txt` and kept in the Keychain (service `com.boltbar.keys`, account `license`). Boltbar never contacts a server about them. Keys are signed with `scripts/make-license.swift`; see [signed release setup](docs/UPDATES.md#supporter-licenses).
 
