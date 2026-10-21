@@ -290,10 +290,17 @@ struct ClaudeAgentStream {
 
     mutating func consume(_ event: [String: Any]) throws -> [StreamUpdate] {
         var out: [StreamUpdate] = []
+        func say(_ piece: String) {
+            // Separate what the model says after a tool from what it said before.
+            out.append(.text(afterStep && saidSomething ? "\n\n" + piece : piece)); afterStep = false; saidSomething = true
+        }
         let type = event["type"] as? String
+        var said = try text.consume(event)[...]
         if type == "assistant", let content = (event["message"] as? [String: Any])?["content"] as? [[String: Any]] {
-            for block in content where block["type"] as? String == "tool_use" {
-                guard let id = block["id"] as? String, steps[id] == nil else { continue }
+            // A message can hold text and tool calls together; they keep its order. Streamed text came before it.
+            for block in content {
+                if block["text"] is String, let piece = said.popFirst() { say(piece) }
+                guard block["type"] as? String == "tool_use", let id = block["id"] as? String, steps[id] == nil else { continue }
                 let step = Self.step(id: id, tool: block["name"] as? String ?? "Tool", input: block["input"] as? [String: Any] ?? [:], directory: directory)
                 steps[id] = step; out.append(.step(step)); afterStep = true
             }
@@ -306,10 +313,7 @@ struct ClaudeAgentStream {
                 steps[id] = step; out.append(.step(step))
             }
         }
-        for piece in try text.consume(event) {
-            // Separate what the model says after a tool from what it said before.
-            out.append(.text(afterStep && saidSomething ? "\n\n" + piece : piece)); afterStep = false; saidSomething = true
-        }
+        said.forEach(say)
         completed = text.completed
         return out
     }

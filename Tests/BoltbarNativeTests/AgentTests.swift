@@ -152,6 +152,64 @@ final class AgentTests: XCTestCase {
         if case .steps = MessageSegment.split("Reply", steps: old).first {} else { XCTFail("Steps first") }
     }
 
+    /// Event sequences shaped like ones recorded from Codex 0.163 (its JavaScript exec tool running two commands at once)
+    /// and Claude Code 2.1: the reply reads text, steps, text, step, text, as it happened, and is saved that way.
+    @MainActor func testLiveRepliesKeepEachStepWhereItHappened() async throws {
+        func item(_ method: String, _ type: String, _ id: String, _ extra: [String: Any] = [:]) -> [String: Any] {
+            ["method": method, "params": ["item": ["type": type, "id": id].merging(extra) { $1 }]]
+        }
+        func delta(_ id: String, _ text: String) -> [String: Any] { ["method": "item/agentMessage/delta", "params": ["itemId": id, "delta": text]] }
+        func command(_ id: String, _ line: String) -> [[String: Any]] {
+            [item("item/started", "commandExecution", id, ["command": "/bin/zsh -lc \(line)", "status": "inProgress"]),
+             item("item/completed", "commandExecution", id, ["command": "/bin/zsh -lc \(line)", "status": "completed", "exitCode": 0])]
+        }
+        func message(_ id: String, _ text: String) -> [[String: Any]] {
+            [item("item/started", "agentMessage", id, ["text": ""]), delta(id, text), item("item/completed", "agentMessage", id, ["text": text])]
+        }
+        let codex = message("m1", "I’ll check the folder.\n")
+            + [item("item/started", "commandExecution", "c1", ["command": "/bin/zsh -lc 'cat notes.txt'"]), item("item/started", "commandExecution", "c2", ["command": "/bin/zsh -lc ls"]),
+               item("item/completed", "commandExecution", "c2", ["command": "/bin/zsh -lc ls", "status": "completed"]),
+               item("item/completed", "commandExecution", "c1", ["command": "/bin/zsh -lc 'cat notes.txt'", "status": "completed"])]
+            + message("m2", "It says hello.\n") + command("c3", "pwd") + message("m3", "Done.") + [["method": "turn/completed", "params": ["turn": ["status": "completed"]]]]
+
+        func said(_ text: String) -> [[String: Any]] {
+            [["type": "stream_event", "event": ["type": "message_start"]],
+             ["type": "stream_event", "event": ["type": "content_block_delta", "delta": ["type": "text_delta", "text": text]]],
+             ["type": "assistant", "message": ["content": [["type": "text", "text": text]]]]]
+        }
+        func bash(_ id: String, _ line: String) -> [String: Any] {
+            ["type": "assistant", "message": ["content": [["type": "tool_use", "id": id, "name": "Bash", "input": ["command": line]]]]]
+        }
+        func result(_ id: String) -> [String: Any] { ["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": id, "content": "ok"]]]] }
+        let claude = said("I'll check the folder.") + [bash("t1", "ls"), bash("t2", "cat notes.txt"), result("t1"), result("t2")]
+            + said("It says hello.") + [bash("t3", "pwd"), result("t3")] + said("Done.") + [["type": "result", "subtype": "success", "is_error": false]]
+
+        for (provider, events) in [(Provider.openai, codex), (.anthropic, claude)] {
+            let model = model { _, update in
+                var codexStream = CodexAgentStream(directory: self.folder), claudeStream = ClaudeAgentStream(directory: self.folder)
+                for event in events {
+                    for item in try (provider == .openai ? codexStream.consume(event) : claudeStream.consume(event)) { await update(item) }
+                    try await Task.sleep(nanoseconds: 1_000_000) // Text waits in the stream buffer, as it does in the bar.
+                }
+            }
+            model.draft = "Look around"; model.send(); await wait { !model.streaming }
+            let reply = try XCTUnwrap(model.messages.last)
+            let parts = MessageSegment.split(reply.text, steps: reply.steps ?? []).map { part -> String in
+                switch part { case .text(let text): return text; case .steps(let steps): return steps.map(\.title).joined(separator: ", ") }
+            }
+            let first = provider == .openai ? "$ cat notes.txt, $ ls" : "$ ls, $ cat notes.txt"
+            XCTAssertEqual(parts, [provider == .openai ? "I’ll check the folder." : "I'll check the folder.", first, "It says hello.", "$ pwd", "Done."], "\(provider)")
+            XCTAssertTrue(reply.steps?.allSatisfy { $0.at != nil && $0.status == .done } == true, "Every step keeps its place in the saved chat")
+        }
+
+        // A message whose text wasn't streamed arrives whole, with its tool call after the words.
+        var stream = ClaudeAgentStream(directory: folder)
+        let whole = try stream.consume(["type": "assistant", "message": ["content": [["type": "text", "text": "Let me look."],
+                                                                                    ["type": "tool_use", "id": "t9", "name": "Read", "input": ["file_path": folder + "/a"]]]]])
+        guard case .text(let words) = whole.first, case .step(let read) = whole.last, whole.count == 2 else { return XCTFail("Text, then the step: \(whole)") }
+        XCTAssertEqual(words, "Let me look."); XCTAssertEqual(read.title, "Read a")
+    }
+
     func testFileLinksResolveToFilesOnThisMac() throws {
         let base = "/Users/me/Projects/app"
         XCTAssertEqual(LocalLink.fileURL(URL(string: "pompeyo/README.md")!, base: base)?.path, base + "/pompeyo/README.md")
