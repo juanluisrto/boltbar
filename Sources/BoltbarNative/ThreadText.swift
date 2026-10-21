@@ -452,6 +452,7 @@ struct ChatThread: NSViewRepresentable {
                 self.theme = theme; cache = [:]; pieces = []
                 storage.setAttributedString(NSAttributedString())
                 text.selectedTextAttributes = [.backgroundColor: theme.accentNS.withAlphaComponent(0.25)]
+                copyMessage.colors(style.secondary, copied: style.accent); copyCode.colors(style.secondary, copied: style.accent)
             }
             let fresh = messages.enumerated().map { index, message -> ThreadPiece in
                 if let cached = cache[message.id], cached.first == (index == 0), cached.message.sameContent(as: message) { return cached }
@@ -503,13 +504,18 @@ struct ChatThread: NSViewRepresentable {
                 let range = NSRange(location: start, length: piece.text.length)
                 if NSLocationInRange(index, range) || index == range.upperBound && piece === pieces.last {
                     if !piece.message.text.isEmpty {
-                        let label = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: NSRange(location: start + piece.label.location, length: piece.label.length), actualCharacterRange: nil), in: container)
+                        let labelRange = NSRange(location: start + piece.label.location, length: piece.label.length)
+                        let label = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: labelRange, actualCharacterRange: nil), in: container)
+                        // The name sits at the bottom of a 22 pt line: centre the icon on its capitals, not on the line.
+                        let glyph = layout.glyphIndexForCharacter(at: labelRange.location)
+                        let baseline = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY + layout.location(forGlyphAt: glyph).y
+                        let middle = baseline - NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold).capHeight / 2
                         copyMessage.show(piece: piece, text: piece.message.text, label: piece.message.role == .user ? "Copy message" : "Copy response",
-                                         at: NSPoint(x: origin.x + label.maxX + 6, y: origin.y + label.midY - 11))
+                                         at: NSPoint(x: origin.x + label.maxX + 6, y: origin.y + middle - CopyOverlay.size.height / 2))
                     } else { copyMessage.hide() }
                     if let block = piece.codeBlocks.first(where: { NSLocationInRange(index - start, $0.range) }), let layout = layout as? ThreadLayoutManager {
                         let rect = layout.blockRect(NSRange(location: start + block.range.location, length: block.range.length), container: container)
-                        copyCode.show(piece: piece, text: block.source, label: "Copy code", at: NSPoint(x: origin.x + rect.maxX - 30, y: origin.y + rect.minY + 5))
+                        copyCode.show(piece: piece, text: block.source, label: "Copy code", at: NSPoint(x: origin.x + rect.maxX - 28, y: origin.y + rect.minY + 6))
                     } else { copyCode.hide() }
                     return
                 }
@@ -574,33 +580,45 @@ struct ChatThread: NSViewRepresentable {
 
 /// A copy button that floats over the text, beside a message's name or atop a code block.
 @MainActor final class CopyOverlay: NSObject {
+    static let size = NSSize(width: 20, height: 18)
     let button = NSButton()
     private(set) var piece: ThreadPiece?
     private var text = ""
     private var reset: DispatchWorkItem?
+    // The theme's colours, not the system's: the panel's look follows Boltbar's theme.
+    private var tint = NSColor.secondaryLabelColor, copiedTint = NSColor.controlAccentColor
+    func colors(_ tint: NSColor, copied: NSColor) {
+        self.tint = tint; copiedTint = copied
+        button.contentTintColor = reset == nil ? tint : copied
+    }
     override init() {
         super.init()
         button.isBordered = false; button.bezelStyle = .inline; button.isHidden = true
+        // Borderless buttons stretch their image to the frame; keep the symbol at its own size.
+        button.imageScaling = .scaleNone
         button.imagePosition = .imageOnly; button.contentTintColor = .secondaryLabelColor
         button.target = self; button.action = #selector(copyText)
         setImage("doc.on.doc")
     }
     func show(piece: ThreadPiece, text: String, label: String, at point: NSPoint) {
         self.piece = piece; self.text = text
-        button.frame = NSRect(x: point.x, y: point.y, width: 24, height: 22)
+        button.frame = NSRect(origin: point, size: Self.size)
         button.toolTip = label; button.setAccessibilityLabel(label)
         button.isHidden = false
     }
     func hide() { if reset == nil { button.isHidden = true; piece = nil } }
     private func setImage(_ name: String) {
-        button.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
+        button.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 10, weight: .medium))
     }
     @objc private func copyText() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        setImage("checkmark"); button.toolTip = "Copied"
+        setImage("checkmark"); button.toolTip = "Copied"; button.contentTintColor = copiedTint
         reset?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.setImage("doc.on.doc"); self?.reset = nil }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            setImage("doc.on.doc"); button.contentTintColor = tint; reset = nil
+        }
         reset = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
