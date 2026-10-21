@@ -280,6 +280,38 @@ final class HistoryTests: XCTestCase {
         let loaded = try await store.load(id)
         XCTAssertEqual(loaded.messages.count, 4)
     }
+    @MainActor func testEachChatKeepsItsOwnUnsentDraft() async throws {
+        let store = try store()
+        let suite = "com.boltbar.tests.drafts.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = ChatModel(defaults: defaults, historyStore: store, streamer: { _, delta in await delta(.text("Answer")) })
+        model.draft = "First chat"; model.send()
+        while model.streaming { await Task.yield() }
+        let first = try XCTUnwrap(model.history.first?.id)
+        model.draft = "Half a thought\nand a second line"
+        model.reset() // The shortcut on an idle chat, or ⌘N.
+        XCTAssertEqual(model.draft, "", "A new chat starts empty")
+        model.draft = "Second chat"; model.send()
+        while model.streaming { await Task.yield() }
+        let second = try XCTUnwrap(model.history.first?.id)
+        model.draft = "Something else"
+
+        var opened = await model.openConversation(first)
+        XCTAssertTrue(opened); XCTAssertEqual(model.draft, "Half a thought\nand a second line")
+        XCTAssertEqual(model.history.map(\.id), [second, first], "A draft doesn't reorder the list")
+        opened = await model.openConversation(second)
+        XCTAssertTrue(opened); XCTAssertEqual(model.draft, "Something else")
+        model.send()
+        while model.streaming { await Task.yield() }
+        model.finish()
+
+        let restarted = ChatModel(defaults: defaults, historyStore: try ConversationStore(directory: store.directory))
+        opened = await restarted.openConversation(first)
+        XCTAssertTrue(opened); XCTAssertEqual(restarted.draft, "Half a thought\nand a second line", "Drafts survive a restart")
+        opened = await restarted.openConversation(second)
+        XCTAssertTrue(opened); XCTAssertEqual(restarted.draft, "", "A draft that was sent is gone")
+    }
     @MainActor func testLateStreamCannotOverwriteAnOpenedHistoryItem() async throws {
         let store = try store(), defaults = UserDefaults(suiteName: "com.boltbar.tests.history")!
         var lateDelta: ((StreamUpdate) async -> Void)?

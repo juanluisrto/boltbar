@@ -111,6 +111,12 @@ import SwiftUI
     private var conversationID = UUID()
     private var conversationCreated = Date()
     private var conversationDirty = false
+    /// The draft as this chat's saved copy has it, so leaving a chat saves its draft only when that changed.
+    private var savedDraft: String?
+    /// A queued message being edited is not a draft.
+    private var draftToSave: String? {
+        editingQueuedID == nil && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? draft : nil
+    }
     private var historySearchTask: Task<Void, Never>?
     private var approvalContinuation: CheckedContinuation<ApprovalDecision, Never>?
     /// Requests allowed "in this chat"; cleared with the conversation.
@@ -480,7 +486,7 @@ import SwiftUI
         manualThreadHeight = nil; threadHeight = 44
         resizeOrigin = nil
         closeHistory(); historyQuery = ""; selectedHistoryID = nil; canReturnToHistory = false; manualHistoryHeight = nil
-        conversationID = UUID(); conversationCreated = Date(); conversationDirty = false
+        conversationID = UUID(); conversationCreated = Date(); conversationDirty = false; savedDraft = nil
     }
     func stop() {
         flushStreamedText()
@@ -494,14 +500,18 @@ import SwiftUI
         saveConversation()
     }
     func saveConversation() {
-        guard deletingConversationID != conversationID, conversationDirty, messages.contains(where: { $0.role == .user }), let historyStore else { return }
-        let summary = ConversationSummary(id: conversationID, title: Conversation.title(for: messages), createdAt: conversationCreated, updatedAt: Date())
+        guard deletingConversationID != conversationID, conversationDirty || draftToSave != savedDraft,
+              messages.contains(where: { $0.role == .user }), let historyStore else { return }
+        // Only a new draft keeps the chat's date and place in the list; typing isn't an update.
+        let draftOnly = !conversationDirty, listed = history.firstIndex { $0.id == conversationID }
+        let summary = ConversationSummary(id: conversationID, title: Conversation.title(for: messages), createdAt: conversationCreated,
+                                          updatedAt: draftOnly ? listed.map { history[$0].updatedAt } ?? Date() : Date())
         var savedMessages = messages
         for index in savedMessages.indices { savedMessages[index].pending = false }
         let record = Conversation(summary: summary, messages: savedMessages, provider: provider, model: model, effort: preferences.effort,
-            transport: preferences.transport(provider), queued: queue.isEmpty ? nil : queue, agentSession: agentSession)
-        history.removeAll { $0.id == summary.id }; history.insert(summary, at: 0)
-        conversationDirty = false
+            transport: preferences.transport(provider), queued: queue.isEmpty ? nil : queue, agentSession: agentSession, draft: draftToSave)
+        if draftOnly, let listed { history[listed] = summary } else { history.removeAll { $0.id == summary.id }; history.insert(summary, at: 0) }
+        conversationDirty = false; savedDraft = draftToSave
         historyStore.save(record) { [weak self] error in
             if let error { Task { @MainActor in self?.historyError = "Could not save chat history: \(error.localizedDescription)" } }
         }
@@ -524,7 +534,7 @@ import SwiftUI
             if conversationID == id {
                 messages = []; queue = []; queueHeld = false; editingQueuedID = nil; agentSession = nil
                 conversationID = UUID(); conversationCreated = Date()
-                conversationDirty = false; lastTurn = nil; canReturnToHistory = false
+                conversationDirty = false; savedDraft = nil; lastTurn = nil; canReturnToHistory = false
                 error = nil; threadHeight = 44; manualThreadHeight = nil
             }
             historyError = nil
@@ -543,7 +553,7 @@ import SwiftUI
             preferences.models[record.provider.rawValue] = record.model
             preferences.transports[record.provider.rawValue] = record.transport
             queue = record.queued ?? []; queueHeld = !queue.isEmpty; editingQueuedID = nil
-            draft = ""; attachments = []; error = nil; lastTurn = nil; approvedKeys = []
+            draft = record.draft ?? ""; savedDraft = record.draft; attachments = []; error = nil; lastTurn = nil; approvedKeys = []
             inputHeight = 26; manualInputHeight = 26; manualThreadHeight = nil; threadHeight = 44
             conversationDirty = false
             selectedHistoryID = id; canReturnToHistory = true

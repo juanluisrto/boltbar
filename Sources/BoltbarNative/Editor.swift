@@ -221,7 +221,11 @@ struct GrowingEditor: NSViewRepresentable {
             text.textColor = theme.textNS; text.insertionPointColor = theme.accentNS
             text.selectedTextAttributes = [.backgroundColor: theme.accentNS.withAlphaComponent(0.25), .foregroundColor: theme.textNS]
         }
-        if text.string != model.draft { text.string = model.draft }
+        if text.string != model.draft {
+            // A reopened chat's draft or a queued message to edit: show all of it, ready to go on typing.
+            text.string = model.draft; text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
+            DispatchQueue.main.async { coordinator.measure(text) }
+        }
         let scrolls = model.inputHeight >= 160
         if scroll.hasVerticalScroller != scrolls { scroll.hasVerticalScroller = scrolls }
     }
@@ -230,9 +234,12 @@ struct GrowingEditor: NSViewRepresentable {
         var textColor: NSColor?, accentColor: NSColor?
         init(_ model: ChatModel) { self.model = model }
         func textDidChange(_ notification: Notification) {
-            guard let text = notification.object as? NSTextView,
-                  let layout = text.layoutManager, let container = text.textContainer else { return }
-            model.draft = text.string; layout.ensureLayout(for: container)
+            guard let text = notification.object as? NSTextView else { return }
+            model.draft = text.string; measure(text)
+        }
+        @MainActor func measure(_ text: NSTextView) {
+            guard let layout = text.layoutManager, let container = text.textContainer else { return }
+            layout.ensureLayout(for: container)
             let height = GrowingEditor.height(for: ceil(layout.usedRect(for: container).height + 6), manual: model.manualInputHeight)
             if model.inputHeight != height { model.inputHeight = height }
         }

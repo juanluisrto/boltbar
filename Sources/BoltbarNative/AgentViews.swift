@@ -310,7 +310,7 @@ enum HelpContent {
         Keep typing: ↵ adds your message to a queue above the field, and the queue goes out when the reply ends. ↵ on an empty field, or Send now, interrupts the reply and sends the queue at once. Stop keeps the partial reply, marked Interrupted.
 
         ## Previous chats
-        → with an empty message, or the clock, opens your chats. Type to search titles and every message; ↑ ↓ select, → or ↵ open, ← goes back to the same search, ⌫ twice deletes.
+        → with an empty message, or the clock, opens your chats. Type to search titles and every message; ↑ ↓ select, → or ↵ open, ← goes back to the same search, ⌫ twice deletes. Each chat keeps the message you were writing.
 
         ## Agent mode
         \(agentShortcut) or the terminal button lets the model act in a project folder through Claude Code or Codex. The chip shows where it works and its permission light:

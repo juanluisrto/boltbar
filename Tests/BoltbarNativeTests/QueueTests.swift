@@ -150,6 +150,13 @@ final class QueueTests: XCTestCase {
         XCTAssertEqual(model.messages.last?.interrupted, true)
         try? await Task.sleep(nanoseconds: 30_000_000)
         XCTAssertEqual(provider.requests.count, 1, "Reopening a chat never sends its queue")
+
+        model.editQueued(model.queue[0].id); XCTAssertEqual(model.draft, "Later")
+        model.reset(); store.flush()
+        let again = await model.openConversation(try XCTUnwrap(store.summaries.first).id)
+        XCTAssertTrue(again)
+        XCTAssertEqual(model.draft, "", "A queued message being edited isn't saved as the chat's draft")
+        XCTAssertEqual(model.queue.map(\.text), ["Later"])
     }
 
     @MainActor func testHeldReturnSendsOnlyOnce() {

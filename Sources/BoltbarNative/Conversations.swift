@@ -18,6 +18,8 @@ struct Conversation: Codable {
     var queued: [Message]? = nil
     /// The CLI session an agent chat continues, also resumable from the terminal.
     var agentSession: AgentSession? = nil
+    /// What was typed and not sent; it is back in the composer when the chat reopens.
+    var draft: String? = nil
 
     static func title(for messages: [Message]) -> String {
         guard let first = messages.first(where: { $0.role == .user }) else { return "New conversation" }
