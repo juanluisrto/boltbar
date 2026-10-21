@@ -301,6 +301,7 @@ import SwiftUI
     }
     func removeLicense() throws { try licenseStore.remove(); licenseState = .unlicensed }
     func buyLicense() { NSWorkspace.shared.open(License.buyURL) }
+    func recoverLicense() { NSWorkspace.shared.open(License.recoveryURL) }
     func showLicenseSettings() { settingsTarget = "license"; openSettings?() }
     /// A finished reply may bring a gentle reminder to an unlicensed copy, on SupportSchedule's terms:
     /// never during a reply or a permission request, never over another message, only where it can be seen.

@@ -12,6 +12,8 @@ struct License: Codable, Equatable {
     var edition: String
     /// Redirects to the Stripe Payment Link, so the price or link can change without a release.
     static let buyURL = URL(string: "https://juanluis.me/boltbar/buy")!
+    /// Shows the key again from the email and invoice number on Stripe's receipt.
+    static let recoveryURL = URL(string: "https://juanluis.me/boltbar/license")!
 }
 
 /// A license key is `base64url(JSON payload).base64url(Ed25519 signature of the payload)`,

@@ -151,6 +151,7 @@ struct LicenseSettings: View {
                 HStack {
                     Text(model.licenseState == .checking ? "Checking…" : "Unlicensed")
                     Spacer()
+                    Button("Lost your key?") { model.recoverLicense() }
                     Button("Buy a license…") { model.buyLicense() }
                 }
             }
