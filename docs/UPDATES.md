@@ -31,6 +31,20 @@ Publish all four artifacts together in the matching stable GitHub release: ZIP, 
 
 Existing versions without Sparkle need one manual installation. Preserve bundle identifier `com.boltbar.native` and the signing team for future updates. Moving from old ad hoc signing can require one more Keychain approval; stable signing is expected to preserve subsequent access, but verify that during the first signed upgrade.
 
+## Supporter licenses
+
+A supporter license is a one-off payment; Boltbar stays MIT licensed and works the same without one. A key is `base64url(JSON payload).base64url(Ed25519 signature)`, where the payload holds `name`, `email`, `order`, `issued` (YYYY-MM-DD) and `edition`. The app checks the signature with CryptoKit against `Resources/license-public-key.txt`, which `scripts/configure-bundle.py` copies into Info.plist as `BoltbarLicensePublicKey`. `swift run` builds have no key, so they accept none and never show the reminder. Nothing is checked online.
+
+Make a key for each order:
+
+```sh
+swift scripts/make-license.swift --name "Ada Lovelace" --email ada@example.com --order 1001
+```
+
+It prints only the license key. `--edition` defaults to `supporter` and `--issued` to today (UTC). The first run created the Ed25519 private key in the login Keychain (service `com.boltbar.license-signing`, account `ed25519`, label “Boltbar license signing key”) and wrote the public key to `Resources/license-public-key.txt`. Like the Sparkle key, it is never printed, written to the repository or regenerated: the script refuses to make a new pair while a public key is committed. Back the private key up (Keychain Access → login → Boltbar license signing key → Show password) in a password manager; losing it means reissuing every license.
+
+The buy link is `License.buyURL` in `Sources/BoltbarNative/License.swift`: `https://juanluis.me/boltbar/buy`, which redirects to the Stripe Payment Link (Managed Payments, so Stripe handles VAT). After payment, juanluis.me signs the key with this same private key, which it holds in the Vercel environment variable `LICENSE_PRIVATE_KEY`, and shows it on the success page. A buyer who loses the key gets it back at `https://juanluis.me/boltbar/license` (`License.recoveryURL`, the "Lost your key?" button) from the email and invoice number on Stripe's receipt. The juanluis.me README covers that side. Use `make-license.swift` for orders handled by hand.
+
 ## Validation performed
 
 - 56 existing Swift tests pass with Sparkle integrated.

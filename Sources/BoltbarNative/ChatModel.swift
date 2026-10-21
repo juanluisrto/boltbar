@@ -69,11 +69,18 @@ import SwiftUI
     private var streamFlush: Task<Void, Never>?
     /// This chat's Claude Code session or Codex thread; agent turns continue it.
     @Published private(set) var agentSession: AgentSession? { didSet { if agentSession != oldValue { conversationDirty = true } } }
-    /// A short confirmation above the toolbar, cleared after a few seconds.
-    @Published var notice: String?
+    /// A short line above the toolbar: plain ones clear after a few seconds, one with actions stays until answered.
+    @Published private(set) var notice: Notice?
     /// Selects the whole chat in its text view; set by the thread. False when there's nothing to select.
     var selectChat: (() -> Bool)?
     private var noticeTask: Task<Void, Never>?
+    @Published private(set) var licenseState = LicenseState.checking
+    var license: License? { if case .licensed(let license) = licenseState { return license }; return nil }
+    var licensePublicKey = LicenseKey.bundled
+    var licenseStore = LicenseStore.keychain
+    var support: SupportSchedule
+    /// A Settings section to scroll to when Settings opens, such as "license".
+    @Published var settingsTarget: String?
     @Published var showingHelp = false
     @Published var error: String?
     @Published var refreshing = false
@@ -108,6 +115,7 @@ import SwiftUI
 
     init(defaults: UserDefaults = .standard, historyStore: ConversationStore? = nil, streamer: @escaping Streamer = Providers.stream) {
         self.defaults = defaults
+        support = SupportSchedule(defaults: defaults)
         defaultModel = defaults.data(forKey: "defaultModel").flatMap { try? JSONDecoder().decode(ModelChoice.self, from: $0) }
         appearance = defaults.data(forKey: "appearance").flatMap { try? JSONDecoder().decode(AppearancePreferences.self, from: $0) } ?? AppearancePreferences()
         self.historyStore = historyStore
@@ -300,6 +308,43 @@ import SwiftUI
         continuation.resume(returning: decision)
     }
 
+    // MARK: Supporter license
+
+    /// At launch, off the main thread, so the shortcut never waits on the Keychain.
+    func loadLicense(allowInteraction: Bool = false) async {
+        support.started()
+        let store = licenseStore
+        do {
+            let saved = try await Task.detached { try store.load(allowInteraction) }.value
+            guard let saved, let publicKey = licensePublicKey, let license = try? LicenseKey.verify(saved, with: publicKey) else { licenseState = .unlicensed; return }
+            licenseState = .licensed(license)
+        } catch { licenseState = .locked(error.localizedDescription) }
+    }
+    /// Checks a pasted key before saving it; the error says what's wrong with it.
+    func enterLicense(_ key: String) throws {
+        guard let publicKey = licensePublicKey else { throw AppError("License keys are checked in release builds.") }
+        let license = try LicenseKey.verify(key, with: publicKey)
+        try licenseStore.save(key.filter { !$0.isWhitespace })
+        licenseState = .licensed(license)
+        if notice?.actions.isEmpty == false { notice = nil }
+    }
+    func removeLicense() throws { try licenseStore.remove(); licenseState = .unlicensed }
+    func buyLicense() { NSWorkspace.shared.open(License.buyURL) }
+    func recoverLicense() { NSWorkspace.shared.open(License.recoveryURL) }
+    func showLicenseSettings() { settingsTarget = "license"; openSettings?() }
+    /// A finished reply may bring a gentle reminder to an unlicensed copy, on SupportSchedule's terms:
+    /// never during a reply or a permission request, never over another message, only where it can be seen.
+    func askForSupportIfDue() {
+        guard licenseState == .unlicensed, licensePublicKey != nil, !streaming, pendingApproval == nil, barVisible, !showingHistory,
+              error == nil, notice == nil, support.due else { return }
+        support.nudged()
+        show(notice: "Boltbar is free and open source. If it's useful to you, a supporter license keeps it going.", actions: [
+            NoticeAction(title: "Buy") { [weak self] in self?.buyLicense() },
+            NoticeAction(title: "Enter key") { [weak self] in self?.showLicenseSettings() },
+            NoticeAction(title: "Not now") {},
+        ])
+    }
+
     // MARK: Help and commands
 
     static let commands = ["/help", "/new", "/agent", "/terminal"]
@@ -323,13 +368,15 @@ import SwiftUI
         NSPasteboard.general.setString(session.terminalCommand, forType: .string)
         show(notice: "Copied: \(session.terminalCommand)")
     }
-    func show(notice text: String) {
-        notice = text; noticeTask?.cancel()
+    func show(notice text: String, actions: [NoticeAction] = []) {
+        notice = Notice(text: text, actions: actions); noticeTask?.cancel()
+        guard actions.isEmpty else { return }
         noticeTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             if !Task.isCancelled { self?.notice = nil }
         }
     }
+    func perform(_ action: NoticeAction) { notice = nil; noticeTask?.cancel(); action.run() }
     func showHelp() { endModelSelection(); closeHistory(); showingHelp = true }
     func closeHelp() { showingHelp = false }
     func showHistory(preservingSearch: Bool = false) {
@@ -641,6 +688,7 @@ import SwiftUI
                 if !self.barVisible { self.unreadReply = true }
                 self.saveConversation()
                 if !self.queuePaused { self.dispatchQueue() }
+                if !failed { self.support.replyFinished(); self.askForSupportIfDue() }
             }
         }
     }

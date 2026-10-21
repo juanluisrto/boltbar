@@ -65,7 +65,9 @@ struct SettingsView: View {
     @ObservedObject var updater: AppUpdater
     @Environment(\.boltbarTheme) private var theme
     @ObservedObject var model: ChatModel
+    @FocusState private var licenseFieldFocused: Bool
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
             SettingsSection(title: "Appearance") {
@@ -103,9 +105,73 @@ struct SettingsView: View {
                 ForEach(Provider.allCases) { ProviderSettings(model: model, provider: $0) }
             }
             UpdateSettings(updater: updater)
+            LicenseSettings(model: model, fieldFocused: $licenseFieldFocused).id("license")
             }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        }.onAppear { reveal(proxy) }.onChange(of: model.settingsTarget) { _ in reveal(proxy) }
         }.font(.system(.body, design: .monospaced)).buttonStyle(InterfaceButtonStyle())
             .frame(minWidth: 520, minHeight: 540).background(theme.background)
+    }
+    /// "Enter key" in the reminder opens Settings here, ready to paste.
+    private func reveal(_ proxy: ScrollViewProxy) {
+        guard let target = model.settingsTarget else { return }
+        DispatchQueue.main.async {
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
+            if target == "license" && model.license == nil { licenseFieldFocused = true }
+            model.settingsTarget = nil
+        }
+    }
+}
+
+/// The supporter license: who it's for, or a place to paste one.
+struct LicenseSettings: View {
+    @ObservedObject var model: ChatModel
+    var fieldFocused: FocusState<Bool>.Binding
+    @State private var key = ""
+    @State private var notice: String?
+    var body: some View {
+        SettingsSection(title: "License") {
+            switch model.licenseState {
+            case .licensed(let license):
+                HStack {
+                    Text("Licensed to \(license.name)")
+                    Spacer()
+                    Button("Remove license") {
+                        do { try model.removeLicense(); notice = nil } catch { notice = error.localizedDescription }
+                    }
+                }
+                Text([license.email, "order \(license.order)", license.issued].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+            case .locked(let message):
+                HStack {
+                    Text(message).fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Allow access to saved license") { Task { await model.loadLicense(allowInteraction: true) } }
+                }
+            case .checking, .unlicensed:
+                HStack {
+                    Text(model.licenseState == .checking ? "Checking…" : "Unlicensed")
+                    Spacer()
+                    Button("Lost your key?") { model.recoverLicense() }
+                    Button("Buy a license…") { model.buyLicense() }
+                }
+            }
+            if model.license == nil {
+                HStack {
+                    TextField("Paste your license key", text: $key).font(.system(size: 12, design: .monospaced))
+                        .focused(fieldFocused).onSubmit(add)
+                    Button("Add license", action: add).disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            if let notice { Text(notice).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            Text(model.license == nil
+                 ? "Boltbar is MIT licensed and works fully without a license. A one-off supporter license keeps it going and silences the occasional reminder. Keys are checked on this Mac and kept in the Keychain; nothing is sent anywhere."
+                 : "Thank you for supporting Boltbar. The key is checked on this Mac and kept in the Keychain; nothing is sent anywhere.")
+                .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    private func add() {
+        guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        do { try model.enterLicense(key); key = ""; notice = nil } catch { notice = error.localizedDescription }
     }
 }
 

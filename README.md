@@ -88,6 +88,7 @@ Web search adds the hosted `web_search` tool to the same OpenAI Responses reques
 ## Architecture
 
 - `Sources/BoltbarNative/Application.swift`: NSPanel, Carbon shortcut, menu-bar item, window lifecycle.
+- `License.swift`: offline supporter license keys and when to remind an unlicensed copy.
 - `ChatModel.swift` and `Domain.swift`: conversation state, persistent attachment ownership, preferences, Keychain.
 - `Conversations.swift`, `HistoryView.swift`: private local history, native keyboard list and friendly dates.
 - `FeaturedModels.swift`: approved OpenAI families and numeric version selection.
@@ -115,6 +116,12 @@ Optional file arguments are for synthetic QA fixtures only. With fixtures, the p
 ## License
 
 [MIT](LICENSE)
+
+## Support
+
+Boltbar is free, open source and fully functional. If it's useful to you, a one-off supporter license keeps it going. Unlicensed copies show a quiet reminder above the toolbar at most once a week, and only after a week of use and 30 replies; it never interrupts a reply, a permission request or the shortcut. Settings → License shows who a copy is licensed to, takes a pasted key and links to the store; **Buy a license…** in the menu-bar menu does the same while unlicensed.
+
+License keys are checked offline against the Ed25519 public key in `Resources/license-public-key.txt` and kept in the Keychain (service `com.boltbar.keys`, account `license`). Boltbar never contacts a server about them. Keys are signed with `scripts/make-license.swift`; see [signed release setup](docs/UPDATES.md#supporter-licenses).
 
 ## Automatic updates
 

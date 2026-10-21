@@ -11,7 +11,7 @@ final class ChatPanel: NSPanel {
     override func orderOut(_ sender: Any?) { super.orderOut(sender); onHide?() }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     let model = ChatModel()
     private lazy var updater = AppUpdater(model: model)
     var panel: ChatPanel!
@@ -20,6 +20,7 @@ final class ChatPanel: NSPanel {
     var hotkey: EventHotKeyRef?
     var hotkeyHandler: EventHandlerRef?
     private var catalogTimer: Timer?
+    private var buyLicenseItem: NSMenuItem?
     private var attachmentPicker: NSOpenPanel?
     private var lastPanelSize = NSSize(width: 700, height: 107)
     private var bottomAnchor: CGFloat?
@@ -63,6 +64,7 @@ final class ChatPanel: NSPanel {
             model.error = "The global shortcut is in use. Quit the other Boltbar version or choose another shortcut in Settings."
         }
         Task { await model.refresh() }
+        Task { await model.loadLicense() }
         catalogTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.model.refresh() }
         }
@@ -86,10 +88,14 @@ final class ChatPanel: NSPanel {
         let newChatStatus = menu.addItem(withTitle: "New chat", action: #selector(self.newChat), keyEquivalent: ""); newChatStatus.target = self
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ","); settings.target = self
         let updateStatus = menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: ""); updateStatus.target = updater
+        let buy = menu.addItem(withTitle: "Buy a license…", action: #selector(buyLicense), keyEquivalent: ""); buy.target = self; buyLicenseItem = buy
         menu.addItem(.separator()); menu.addItem(withTitle: "Quit Boltbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in [root, appMenu, edit, menu] { item.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular) }
-        status.menu = menu
+        menu.delegate = self; status.menu = menu
     }
+    /// Only an unlicensed copy offers a license; one the Keychain hasn't answered for yet doesn't.
+    func menuNeedsUpdate(_ menu: NSMenu) { buyLicenseItem?.isHidden = model.licenseState != .unlicensed }
+    @objc func buyLicense() { model.buyLicense() }
     func register(_ key: UInt32, _ modifiers: UInt32) -> Bool {
         if hotkey != nil, key == model.preferences.shortcutKey, modifiers == model.preferences.shortcutModifiers { return true }
         var next: EventHotKeyRef?

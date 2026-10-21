@@ -208,9 +208,20 @@ struct ChatBar: View {
                     Button { model.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
                 }
             } else if let notice = model.notice {
-                Text(notice).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(8).background(theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-                    .accessibilityAddTraits(.updatesFrequently)
+                HStack(spacing: 6) {
+                    Text(notice.text).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading).accessibilityAddTraits(.updatesFrequently)
+                    // The first action leads; the rest stay quiet.
+                    ForEach(Array(notice.actions.enumerated()), id: \.element.id) { index, action in
+                        Button { model.perform(action) } label: {
+                            Text(action.title).foregroundStyle(index == 0 ? theme.accent : theme.text.opacity(0.7))
+                                .padding(.horizontal, 8).frame(height: 22)
+                                .background(index == 0 ? theme.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        }.buttonStyle(.plain).fixedSize()
+                    }
+                }.font(.system(size: 12, design: .monospaced))
+                    .padding(notice.actions.isEmpty ? 8 : 5).padding(.leading, notice.actions.isEmpty ? 0 : 3)
+                    .background(theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
             }
             // The two chips that say how it will answer come first; + unrolls the rest.
             HStack(spacing: 9) {
