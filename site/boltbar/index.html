@@ -34,9 +34,9 @@
       <p>Boltbar is a small, native chat bar for macOS. Press <kbd>⌥ Space</kbd> in any app, ask GPT or Claude, and get back to what you were doing.</p>
       <p>New in 0.6: <a href="#agent">agent mode</a>. Press <kbd>⌘ J</kbd> and Claude Code or Codex does the work in a project folder, asking before it acts as much as you want it to.</p>
       <p class="actions">
-        <a class="download" href="https://github.com/juanluisrto/boltbar/releases/latest">Download for Mac</a>
+        <span class="command primary"><code>brew install --cask juanluisrto/boltbar/boltbar</code><button type="button" data-copy="brew install --cask juanluisrto/boltbar/boltbar">copy</button></span>
         <span class="dim">or</span>
-        <span class="command"><code>curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh</code><button type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh">copy</button></span>
+        <a href="https://github.com/juanluisrto/boltbar/releases/latest">download the app</a>
       </p>
       <p class="dim small">macOS 13+ · Apple Silicon and Intel · signed and notarized · MIT</p>
     </section>
@@ -132,7 +132,9 @@
 
     <section id="install">
       <h2>Install</h2>
-      <p>Download the signed DMG or ZIP from the <a href="https://github.com/juanluisrto/boltbar/releases/latest">latest release</a>, or run:</p>
+      <p>With <a href="https://brew.sh">Homebrew</a>:</p>
+      <p class="command block primary"><code>brew install --cask juanluisrto/boltbar/boltbar</code><button type="button" data-copy="brew install --cask juanluisrto/boltbar/boltbar">copy</button></p>
+      <p>Boltbar keeps updating itself, so <code>brew upgrade</code> leaves it alone unless you pass <code class="nowrap">--greedy</code>. Without Homebrew, download the signed DMG or ZIP from the <a href="https://github.com/juanluisrto/boltbar/releases/latest">latest release</a>, or run:</p>
       <p class="command block"><code>curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh</code><button type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh">copy</button></p>
       <p>The script checks the release checksum and keeps any previous version as a backup. Boltbar needs macOS 13 Ventura or later, and an OpenAI or Anthropic API key or a Codex or Claude Code login.</p>
     </section>

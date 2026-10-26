@@ -68,6 +68,10 @@ button {
   padding: 0;
   cursor: pointer;
 }
+/* A flag breaks at its dashes otherwise. */
+.nowrap {
+  white-space: nowrap;
+}
 
 /* Layout: one narrow column; the trailer gets a little more room. */
 .top,
@@ -177,6 +181,15 @@ p {
 }
 .command.block {
   display: flex;
+}
+/* The easy way in: the Homebrew command, outlined like the button it replaces. */
+.command.primary {
+  border-color: var(--accent);
+  padding: 9px 12px;
+  font-size: 14px;
+}
+.command.primary button {
+  color: var(--accent);
 }
 
 .film {
