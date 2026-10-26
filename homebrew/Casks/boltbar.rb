@@ -1,7 +1,7 @@
 # Native macOS release; copy this cask into your own tap if desired.
 cask "boltbar" do
-  version "0.7.1"
-  sha256 "8c140569a589950eeefb28475888da4b786edf532af4bd249ecd00e7ccebe5af"
+  version "0.7.2"
+  sha256 "927b414a0522ce5ea04eb7d1a5d340ef5a3869dbf149be2618de00762df1c8f4"
 
   url "https://github.com/juanluisrto/boltbar/releases/download/v#{version}/Boltbar-#{version}-universal.zip"
   name "Boltbar"

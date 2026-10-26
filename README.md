@@ -22,7 +22,7 @@ A compact AI chat bar built in Swift, SwiftUI and AppKit. Starting with v0.2.0, 
 
 ## Install
 
-Download the universal ZIP or DMG from [v0.7.1](https://github.com/juanluisrto/boltbar/releases/tag/v0.7.1), or run:
+Download the universal ZIP or DMG from [v0.7.2](https://github.com/juanluisrto/boltbar/releases/tag/v0.7.2), or run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh
 
 The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
 
-**v0.7.1 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
+**v0.7.2 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
 
 The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
 
@@ -56,7 +56,7 @@ The default build uses an ad hoc signature. For local development, supply an exi
 
 From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.7.1`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
+With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.7.2`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
 ## Credentials and providers
 
