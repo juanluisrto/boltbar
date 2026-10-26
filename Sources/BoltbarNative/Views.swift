@@ -236,6 +236,7 @@ struct ChatBar: View {
                     .accessibilityValue("\(modelTitle(model.model)), \(model.preferences.effort.title) effort")
                     .help("\(model.preferences.effort.title) effort")
                     .popover(isPresented: $model.showingModelPicker, arrowEdge: .top) { ModelPopover(model: model, close: { model.showingModelPicker = false }) }
+                    .layoutPriority(1) // Like the agent chip, its name wins over the empty drag area.
                 AgentChip(model: model)
                 ToolRoll(model: model)
                 PanelMoveArea().frame(maxWidth: .infinity).frame(height: 31)
