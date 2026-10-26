@@ -29,6 +29,8 @@ The script builds arm64 and x86_64, signs the nested Sparkle helpers and app wit
 
 Publish all four artifacts together in the matching stable GitHub release: ZIP, DMG, `appcast.xml`, and `SHA256SUMS`. The embedded feed is `https://github.com/juanluisrto/boltbar/releases/latest/download/appcast.xml`; enclosure URLs point to the immutable versioned release. Upload assets before marking the draft release public/latest. Do not publish local QA feeds or test builds. The packaging script does not publish.
 
+Homebrew installs from the [juanluisrto/homebrew-boltbar](https://github.com/juanluisrto/homebrew-boltbar) tap. After the release is public, put the new `version` and the ZIP's SHA-256 in that repository's `Casks/boltbar.rb`, as in `homebrew/Casks/boltbar.rb` here, and check it with `brew audit --cask --online --strict juanluisrto/boltbar/boltbar`. When testing an install, uninstall with `HOMEBREW_NO_AUTOREMOVE=1`: otherwise `brew uninstall` also removes every unneeded dependency on the machine.
+
 Existing versions without Sparkle need one manual installation. Preserve bundle identifier `com.boltbar.native` and the signing team for future updates. Moving from old ad hoc signing can require one more Keychain approval; stable signing is expected to preserve subsequent access, but verify that during the first signed upgrade.
 
 ## Supporter licenses

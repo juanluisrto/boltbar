@@ -22,7 +22,13 @@ A compact AI chat bar built in Swift, SwiftUI and AppKit. Starting with v0.2.0, 
 
 ## Install
 
-Download the universal ZIP or DMG from [v0.7.2](https://github.com/juanluisrto/boltbar/releases/tag/v0.7.2), or run:
+With Homebrew:
+
+```sh
+brew install --cask juanluisrto/boltbar/boltbar
+```
+
+Or download the universal ZIP or DMG from [v0.7.2](https://github.com/juanluisrto/boltbar/releases/tag/v0.7.2), or run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -32,7 +38,7 @@ The installer verifies the release's SHA-256 checksum and preserves an existing 
 
 **v0.7.2 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
 
-The [Homebrew cask](homebrew/Casks/boltbar.rb) pins the same universal ZIP and checksum; it is supplied in this repository, not in the official Homebrew cask registry.
+The cask lives in the [juanluisrto/homebrew-boltbar](https://github.com/juanluisrto/homebrew-boltbar) tap and pins the same universal ZIP and checksum. Boltbar updates itself, so `brew upgrade` leaves it alone unless you pass `--greedy`.
 
 ## Build and test
 
