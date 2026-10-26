@@ -1,7 +1,7 @@
 # Copy of Casks/boltbar.rb in the juanluisrto/homebrew-boltbar tap, which Homebrew installs from.
 cask "boltbar" do
-  version "0.7.2"
-  sha256 "927b414a0522ce5ea04eb7d1a5d340ef5a3869dbf149be2618de00762df1c8f4"
+  version "0.7.3"
+  sha256 "2ff7788b55ac6a6ccf21ce489910bf41f12d737c670eb952957605c46ea35ed4"
 
   url "https://github.com/juanluisrto/boltbar/releases/download/v#{version}/Boltbar-#{version}-universal.zip"
   name "Boltbar"

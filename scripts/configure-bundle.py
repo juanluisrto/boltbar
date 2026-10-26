@@ -8,7 +8,7 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 info = plistlib.loads(path.read_bytes())
-version = os.environ.get("BOLTBAR_VERSION", "0.7.2")
+version = os.environ.get("BOLTBAR_VERSION", "0.7.3")
 build = os.environ.get("BOLTBAR_BUILD", version)
 if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,3}", build):
     raise SystemExit("BOLTBAR_BUILD must be a numeric, increasing version")

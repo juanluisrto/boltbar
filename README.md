@@ -28,7 +28,7 @@ With Homebrew:
 brew install --cask juanluisrto/boltbar/boltbar
 ```
 
-Or download the universal ZIP or DMG from [v0.7.2](https://github.com/juanluisrto/boltbar/releases/tag/v0.7.2), or run:
+Or download the universal ZIP or DMG from [v0.7.3](https://github.com/juanluisrto/boltbar/releases/tag/v0.7.3), or run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh | sh
@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/juanluisrto/boltbar/main/install.sh
 
 The installer verifies the release's SHA-256 checksum and preserves an existing `Boltbar.app` as a timestamped backup. Quit older Boltbar builds before launching the new app.
 
-**v0.7.2 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
+**v0.7.3 uses Developer ID signing and Apple notarization.** The installer preserves quarantine and does not disable Gatekeeper. Older releases were ad hoc signed.
 
 The cask lives in the [juanluisrto/homebrew-boltbar](https://github.com/juanluisrto/homebrew-boltbar) tap and pins the same universal ZIP and checksum. Boltbar updates itself, so `brew upgrade` leaves it alone unless you pass `--greedy`.
 
@@ -62,7 +62,7 @@ The default build uses an ad hoc signature. For local development, supply an exi
 
 From this checkout, `sh install.sh` builds and installs the native app. It preserves an existing installation as a timestamped backup and preserves quarantine metadata.
 
-With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.7.2`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
+With the [signing and notarization configuration](docs/UPDATES.md), `sh scripts/package-release.sh` builds the universal app and creates a notarized ZIP/DMG, signed update feed and `SHA256SUMS` under `build/releases/v0.7.3`. It does not publish anything. The previous v0.1.3 release is the legacy Tauri app.
 
 ## Credentials and providers
 
