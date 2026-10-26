@@ -607,6 +607,8 @@ struct ChatThread: NSViewRepresentable {
             placeSpinners()
             if following { scrollToEnd() }
             if let text, let layout = text.layoutManager, let container = text.textContainer {
+                // A new width throws the layout away; measured before it is redone, the text is 0pt tall.
+                layout.ensureLayout(for: container)
                 let height = ceil(layout.usedRect(for: container).height) + 2
                 if abs(model.threadHeight - height) > 0.5 { DispatchQueue.main.async { [model] in model.threadHeight = height } }
             }
