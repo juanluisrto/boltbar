@@ -93,6 +93,8 @@ import SwiftUI
     var presentFolderPicker: (() -> Void)?
     var newConversation: (() -> Void)?
     var focusComposer: (() -> Void)?
+    var hideBar: (() -> Void)?
+    var applyLayout: ((PanelLayout) -> Void)?
     var resizeOrigin: NSPoint?
     var updateShortcut: ((UInt32, UInt32, String) -> Bool)?
     var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
@@ -195,7 +197,10 @@ import SwiftUI
         let ids = Set(historyMatches)
         return history.filter { ids.contains($0.id) }
     }
-    var historyHeight: CGFloat { manualHistoryHeight ?? min(308, max(88, CGFloat(history.count) * 44)) }
+    var historyHeight: CGFloat { manualHistoryHeight ?? naturalHistoryHeight }
+    var naturalHistoryHeight: CGFloat { min(308, max(88, CGFloat(history.count) * 44)) }
+    /// The thread is on screen: there are messages, and neither history nor help covers them.
+    var showingThread: Bool { !showingHistory && !showingHelp && !messages.isEmpty }
     func cycleModel(_ direction: Int) {
         guard !streaming, !showingHistory, draft.isEmpty || showingModelPicker else { return }
         let choices = selectableModels

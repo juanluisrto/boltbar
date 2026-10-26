@@ -20,6 +20,10 @@ final class ChatPanel: NSPanel {
     var hotkey: EventHotKeyRef?
     var hotkeyHandler: EventHandlerRef?
     private var catalogTimer: Timer?
+    private var layoutTimer: Timer?
+    /// Where a layout change grows from, and the bar around what it resizes. Kept while it animates:
+    /// the window trails the model by a frame, so a second click can't measure them mid-way.
+    private var layoutAnchor: (top: NSPoint, chrome: CGFloat)?
     private var buyLicenseItem: NSMenuItem?
     private var attachmentPicker: NSOpenPanel?
     private var lastPanelSize = NSSize(width: 700, height: 107)
@@ -47,6 +51,8 @@ final class ChatPanel: NSPanel {
         model.presentFolderPicker = { [weak self] in self?.showFolderPicker() }
         model.newConversation = { [weak self] in self?.newChat() }
         model.focusComposer = { [weak self] in self?.focusComposer() }
+        model.hideBar = { [weak self] in self?.panel.orderOut(nil) }
+        model.applyLayout = { [weak self] in self?.apply($0) }
         model.updateShortcut = { [weak self] key, modifiers, label in
             guard let self, self.register(key, modifiers) else { return false }
             self.model.preferences.shortcutKey = key; self.model.preferences.shortcutModifiers = modifiers; self.model.preferences.shortcutLabel = label
@@ -116,6 +122,51 @@ final class ChatPanel: NSPanel {
         if frame.maxX > visible.maxX { frame.origin.x = visible.maxX - frame.width }
         // AppKit uses a bottom-left origin: preserving y grows the editor upward.
         panel.setFrame(frame, display: true)
+    }
+    /// Compact trims the bar to a small reading size; column makes it narrow
+    /// and about two-thirds of the screen tall, for keeping beside other windows.
+    /// The bar grows or shrinks there from its top left, so the button stays under the pointer.
+    private func apply(_ layout: PanelLayout) {
+        guard let panel else { return }
+        layoutTimer?.invalidate()
+        let visible = (panel.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        // Only history or the thread changes height; an empty chat or help keeps its own.
+        let history = model.showingHistory, thread = model.showingThread
+        let fromHeight = history ? model.historyHeight : thread ? model.manualThreadHeight ?? min(330, max(44, model.threadHeight)) : 0
+        let anchor = layoutAnchor ?? (top: NSPoint(x: panel.frame.minX, y: panel.frame.maxY), chrome: panel.frame.height - fromHeight)
+        let top = anchor.top, chrome = anchor.chrome
+        layoutAnchor = anchor
+        let fromWidth = model.panelWidth, toWidth: CGFloat = layout == .compact ? 520 : 440
+        var toHeight = fromHeight
+        switch layout {
+        case .compact:
+            if history { toHeight = model.naturalHistoryHeight } else if thread { toHeight = min(200, max(44, model.threadHeight)) }
+        case .column:
+            if history || thread { toHeight = max(88, min(720, visible.height * 0.66) - chrome) }
+        }
+        let began = ProcessInfo.processInfo.systemUptime
+        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.24
+        // Each step resizes like a drag on the border: set the origin, then the sizes the bar lays out to.
+        func step() -> Bool {
+            let t = duration > 0 ? min(1, (ProcessInfo.processInfo.systemUptime - began) / duration) : 1
+            let eased = CGFloat(t < 0.5 ? 4 * t * t * t : 1 - pow(2 - 2 * t, 3) / 2)
+            let width = fromWidth + (toWidth - fromWidth) * eased, height = fromHeight + (toHeight - fromHeight) * eased
+            let size = NSSize(width: ceil(max(420, width)), height: ceil(chrome + height))
+            let origin = NSPoint(x: min(top.x, visible.maxX - size.width), y: max(visible.minY, min(top.y, visible.maxY) - size.height))
+            if abs(size.width - panel.frame.width) > 0.5 || abs(size.height - panel.frame.height) > 0.5 { model.resizeOrigin = origin }
+            model.panelWidth = width
+            if history { model.manualHistoryHeight = height } else if thread { model.manualThreadHeight = height }
+            guard t >= 1 else { return false }
+            // Compact hands history back its natural height, which follows the list.
+            if layout == .compact { model.manualHistoryHeight = nil }
+            layoutAnchor = nil
+            return true
+        }
+        guard !step() else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated { if step() { timer.invalidate(); self?.layoutTimer = nil } }
+        }
+        RunLoop.main.add(timer, forMode: .common); layoutTimer = timer
     }
     /// The global shortcut: a new chat, or the current one while it is still working.
     func summon() { present(newChat: false) }

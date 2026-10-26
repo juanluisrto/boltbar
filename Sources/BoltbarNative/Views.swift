@@ -172,7 +172,7 @@ struct ChatBar: View {
     @ObservedObject var model: ChatModel
     var body: some View {
         VStack(spacing: 10) {
-            PanelMoveArea().frame(height: 12)
+            PanelHeader(model: model)
             if model.showingHistory {
                 HistoryPane(model: model, close: { model.closeHistory() })
             } else {
@@ -259,7 +259,7 @@ struct ChatBar: View {
                 Text(error).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.error).fixedSize(horizontal: false, vertical: true).padding(8).background(theme.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
             }
         }
-        .padding(.horizontal, 16).padding(.top, 9).padding(.bottom, 14)
+        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 14)
         .frame(width: model.panelWidth).background(theme.background)
         .clipShape(RoundedRectangle(cornerRadius: 19))
         .overlay(PanelBorders(model: model))

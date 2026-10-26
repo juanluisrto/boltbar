@@ -116,20 +116,23 @@ struct PanelResizeArea: NSViewRepresentable {
     func updateNSView(_ view: ResizeAreaView, context: Context) {}
 }
 
+/// Generous grips: the content keeps 16pt at the sides and 14pt below, so
+/// most of that margin can resize without stealing clicks from the content.
 struct PanelBorders: View {
     @ObservedObject var model: ChatModel
+    static let edge: CGFloat = 12, top: CGFloat = 8, corner: CGFloat = 18
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                PanelResizeArea(model: model, region: .top).frame(height: 6)
+                PanelResizeArea(model: model, region: .top).frame(height: Self.top)
                 Spacer(minLength: 0)
-                PanelResizeArea(model: model, region: .bottom).frame(height: 6)
-            }.padding(.horizontal, 14)
+                PanelResizeArea(model: model, region: .bottom).frame(height: Self.edge)
+            }.padding(.horizontal, Self.corner)
             HStack(spacing: 0) {
-                PanelResizeArea(model: model, region: .left).frame(width: 6)
+                PanelResizeArea(model: model, region: .left).frame(width: Self.edge)
                 Spacer(minLength: 0)
-                PanelResizeArea(model: model, region: .right).frame(width: 6)
-            }.padding(.vertical, 14)
+                PanelResizeArea(model: model, region: .right).frame(width: Self.edge)
+            }.padding(.vertical, Self.corner)
             VStack(spacing: 0) {
                 HStack { corner(.topLeft); Spacer(minLength: 0); corner(.topRight) }
                 Spacer(minLength: 0)
@@ -138,6 +141,63 @@ struct PanelBorders: View {
         }
     }
     func corner(_ region: ResizeRegion) -> some View {
-        PanelResizeArea(model: model, region: region).frame(width: 14, height: 14)
+        // Smaller at top left, so it stops short of the close button.
+        let side = region == .topLeft ? 11 : Self.corner
+        return PanelResizeArea(model: model, region: region).frame(width: side, height: side)
+    }
+}
+
+/// The two one-click sizes beside the close button.
+enum PanelLayout { case compact, column }
+
+/// The strip across the top moves the bar; hovering it reveals close and the two sizes.
+struct PanelHeader: View {
+    @ObservedObject var model: ChatModel
+    @State private var hovering = false
+    var body: some View {
+        ZStack(alignment: .leading) {
+            PanelMoveArea()
+            if hovering {
+                HStack(spacing: 6) {
+                    CloseDot { model.hideBar?() }
+                    LayoutButton(symbol: "rectangle.compress.vertical", label: "Compact size") { model.applyLayout?(.compact) }
+                    // A column needs something to make tall.
+                    if model.showingHistory || model.showingThread {
+                        LayoutButton(symbol: "rectangle.portrait", label: "Narrow, tall column") { model.applyLayout?(.column) }
+                    }
+                // The dot sits 13pt from the top and the left edge, centred in the 19pt corner.
+                }.padding(.leading, -6).transition(.opacity)
+            }
+        }.frame(height: 22)
+            .onHover { over in withAnimation(.easeOut(duration: 0.12)) { hovering = over } }
+    }
+}
+
+/// macOS's red close light; the × shows on hover, as in a title bar.
+struct CloseDot: View {
+    let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            Circle().fill(Color(red: 1, green: 0.373, blue: 0.341))
+                .overlay(Circle().stroke(Color.black.opacity(0.12), lineWidth: 0.5))
+                .overlay(Image(systemName: "xmark").font(.system(size: 6.5, weight: .heavy)).foregroundStyle(Color.black.opacity(0.55)).opacity(hovering ? 1 : 0))
+                .frame(width: 12, height: 12).frame(width: 18, height: 18).contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel("Hide Boltbar").help("Hide · esc")
+    }
+}
+
+struct LayoutButton: View {
+    @Environment(\.boltbarTheme) private var theme
+    let symbol: String, label: String, action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 10, weight: .medium))
+                .foregroundStyle(theme.text.opacity(hovering ? 0.85 : 0.5))
+                .frame(width: 20, height: 18).background(theme.text.opacity(hovering ? 0.1 : 0), in: RoundedRectangle(cornerRadius: 5))
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel(label).help(label)
     }
 }
