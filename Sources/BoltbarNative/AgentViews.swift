@@ -70,7 +70,8 @@ struct AgentChip: View {
                 .padding(.horizontal, model.selectingAgent ? 11 : 0).frame(minWidth: 30).frame(height: 30)
                 .background(theme.surface, in: Capsule())
                 .overlay(Capsule().stroke(model.selectingAgent ? theme.accent : .clear, lineWidth: 1.5))
-            }.buttonStyle(.plain).accessibilityLabel("Agent mode").accessibilityValue("Off")
+            }.buttonStyle(.plain).fixedSize() // Squeezed, its capsule shrank under the hint and the hint ran into +.
+                .accessibilityLabel("Agent mode").accessibilityValue("Off")
                 .help("Agent mode: let the model act in a folder (\(shortcut))")
         }
     }
